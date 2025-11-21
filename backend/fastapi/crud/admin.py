@@ -273,6 +273,11 @@ def delete_admin(db: Session, admin_id: UUID) -> bool:
     return AdminCRUD(db).delete_admin(admin_id)
 
 
+def get_admin_count(db: Session, include_inactive: bool = False) -> int:
+    """Get total count of admins."""
+    return AdminCRUD(db).count_admins(include_inactive=include_inactive)
+
+
 async def get_admin_by_username_async(db: AsyncSession, username: str) -> Optional[Admin]:
     """Get admin by username (async)."""
     return await AsyncAdminCRUD(db).get_admin_by_username(username)
