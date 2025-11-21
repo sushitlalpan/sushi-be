@@ -5,7 +5,7 @@ This module provides FastAPI endpoints for branch management operations
 including creating, reading, updating, and deleting branches.
 """
 
-from typing import List, Optional, Union
+from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -69,7 +69,7 @@ async def list_branches(
     search: Optional[str] = Query(None, description="Search term for branch names"),
     include_stats: bool = Query(False, description="Include user and payroll statistics"),
     db: Session = Depends(get_sync_db),
-    current_user: Union[Admin, User] = Depends(get_current_admin_or_user)
+    current_user: Admin | User = Depends(get_current_admin_or_user)
 ):
     """
     Get list of all branches.
@@ -123,7 +123,7 @@ async def list_branches(
 async def get_branch_by_id(
     branch_id: UUID,
     db: Session = Depends(get_sync_db),
-    current_user: Union[Admin, User] = Depends(get_current_admin_or_user)
+    current_user: Admin | User = Depends(get_current_admin_or_user)
 ):
     """
     Get specific branch by ID with statistics.

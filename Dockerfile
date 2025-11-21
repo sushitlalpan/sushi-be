@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image
-FROM python:3.9-slim as builder
+FROM python:3.11-slim as builder
 
 # Set environment variables to avoid installing __pycache__ and other files
 ENV PYTHONDONTWRITEBYTECODE 1
@@ -24,7 +24,7 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
 # Second stage: Create the final runtime image
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1

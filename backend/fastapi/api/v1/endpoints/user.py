@@ -5,7 +5,7 @@ This module provides FastAPI endpoints for staff user authentication,
 registration, clock-in/out, and user management.
 """
 
-from typing import List, Optional, Union
+from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -226,7 +226,7 @@ async def list_users(
     branch: Optional[str] = Query(None, description="Filter by branch"),
     include_inactive: bool = Query(False, description="Include inactive users"),
     db: Session = Depends(get_sync_db),
-    current_user: Union[Admin, User] = Depends(get_current_admin_or_user)
+    current_user: Admin | User = Depends(get_current_admin_or_user)
 ):
     """
     Get list of all staff users.
@@ -274,7 +274,7 @@ async def list_users(
 async def get_user_by_id(
     user_id: UUID,
     db: Session = Depends(get_sync_db),
-    current_user: Union[Admin, User] = Depends(get_current_admin_or_user)
+    current_user: Admin | User = Depends(get_current_admin_or_user)
 ):
     """
     Get specific staff user by ID.
