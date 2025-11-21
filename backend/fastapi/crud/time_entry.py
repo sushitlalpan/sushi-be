@@ -5,7 +5,7 @@ This module provides database operations for time entries including
 clock-in/out tracking, time reports, and attendance management.
 """
 
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from uuid import UUID
 from datetime import datetime, date, time as time_type
 from sqlalchemy.orm import Session
@@ -141,7 +141,7 @@ class TimeEntryCRUD:
         
         return "clocked_in" if latest_entry.entry_type == TimeEntryType.CLOCK_IN else "clocked_out"
     
-    def get_latest_entries(self, user_id: UUID) -> Tuple[Optional[TimeEntry], Optional[TimeEntry]]:
+    def get_latest_entries(self, user_id: UUID) -> tuple[Optional[TimeEntry], Optional[TimeEntry]]:
         """
         Get user's latest clock-in and clock-out entries.
         
@@ -149,7 +149,7 @@ class TimeEntryCRUD:
             user_id: User UUID
             
         Returns:
-            Tuple of (latest_clock_in, latest_clock_out)
+            tuple of (latest_clock_in, latest_clock_out)
         """
         latest_clock_in = (self.db.query(TimeEntry)
                           .filter(and_(TimeEntry.user_id == user_id,

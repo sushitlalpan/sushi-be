@@ -251,7 +251,7 @@ async def get_current_active_user(
 async def get_current_admin_or_user(
     token_data: dict = Depends(get_current_user_token),
     db: Session = Depends(get_sync_db)
-) -> Tuple[Admin | User, str]:
+) -> tuple[Admin | User, str]:
     """
     Get current authenticated user (admin or staff) with role information.
     
@@ -260,7 +260,7 @@ async def get_current_admin_or_user(
         db: Database session
         
     Returns:
-        Tuple of (user_instance, role) where role is "admin" or "user"
+        tuple of (user_instance, role) where role is "admin" or "user"
         
     Raises:
         HTTPException: If user not found or inactive
