@@ -5,7 +5,7 @@ This module provides dependency functions for protecting FastAPI routes
 and extracting authenticated user information.
 """
 
-from typing import Optional
+from typing import Optional, Union, Tuple
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -251,7 +251,7 @@ async def get_current_active_user(
 async def get_current_admin_or_user(
     token_data: dict = Depends(get_current_user_token),
     db: Session = Depends(get_sync_db)
-) -> tuple[Admin | User, str]:
+) -> Tuple[Union[Admin, User], str]:
     """
     Get current authenticated user (admin or staff) with role information.
     

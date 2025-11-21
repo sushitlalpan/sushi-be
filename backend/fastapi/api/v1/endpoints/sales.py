@@ -6,7 +6,7 @@ Includes create, delete, list (paginated), and search (filtered) operations.
 """
 
 from uuid import UUID
-from typing import List, Optional
+from typing import List, Optional, Union
 from datetime import date
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -101,7 +101,7 @@ async def delete_sales_record(
 async def list_sales_records(
     *,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user),
+    current_user: Union[Admin, User] = Depends(get_current_admin_or_user),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
     order_by: str = Query(
@@ -189,7 +189,7 @@ async def list_sales_records(
 async def search_sales_records(
     *,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user),
+    current_user: Union[Admin, User] = Depends(get_current_admin_or_user),
     worker: Optional[UUID] = Query(None, description="Filter by worker ID"),
     branch: Optional[UUID] = Query(None, description="Filter by branch ID"),
     start_date: Optional[date] = Query(None, description="Filter from this date (YYYY-MM-DD)"),
@@ -326,7 +326,7 @@ async def get_sales_record(
     *,
     db: Session = Depends(get_sync_db),
     sales_id: UUID,
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    current_user: Union[Admin, User] = Depends(get_current_admin_or_user)
 ) -> SalesWithDetails:
     """
     Get a specific sales record with details.
@@ -546,7 +546,7 @@ async def get_discrepancy_report(
 async def get_sales_summary(
     *,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user),
+    current_user: Union[Admin, User] = Depends(get_current_admin_or_user),
     start_date: Optional[date] = Query(None, description="Summary start date"),
     end_date: Optional[date] = Query(None, description="Summary end date"),
     branch_id: Optional[UUID] = Query(None, description="Filter by branch (admins only)")

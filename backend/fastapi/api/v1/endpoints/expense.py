@@ -6,7 +6,7 @@ business purchases, operational costs, and reimbursement tracking.
 """
 
 from uuid import UUID
-from typing import List, Optional
+from typing import List, Optional, Union
 from datetime import date
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -42,7 +42,7 @@ async def create_expense_record(
     *,
     db: Session = Depends(get_sync_db),
     expense_in: ExpenseCreate,
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    current_user: Union[Admin, User] = Depends(get_current_admin_or_user)
 ) -> ExpenseRead:
     """
     Create a new expense record.
@@ -83,7 +83,7 @@ async def delete_expense_record(
     *,
     db: Session = Depends(get_sync_db),
     expense_id: UUID,
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    current_user: Union[Admin, User] = Depends(get_current_admin_or_user)
 ) -> None:
     """
     Delete an expense record.
@@ -124,7 +124,7 @@ async def delete_expense_record(
 async def list_expense_records(
     *,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user),
+    current_user: Union[Admin, User] = Depends(get_current_admin_or_user),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
     order_by: str = Query(
@@ -211,7 +211,7 @@ async def list_expense_records(
 async def search_expense_records(
     *,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user),
+    current_user: Union[Admin, User] = Depends(get_current_admin_or_user),
     worker: Optional[UUID] = Query(None, description="Filter by worker ID"),
     branch: Optional[UUID] = Query(None, description="Filter by branch ID"),
     start_date: Optional[date] = Query(None, description="Filter from this date (YYYY-MM-DD)"),
@@ -359,7 +359,7 @@ async def get_expense_record(
     *,
     db: Session = Depends(get_sync_db),
     expense_id: UUID,
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    current_user: Union[Admin, User] = Depends(get_current_admin_or_user)
 ) -> ExpenseWithDetails:
     """
     Get a specific expense record with details.
@@ -404,7 +404,7 @@ async def update_expense_record(
     db: Session = Depends(get_sync_db),
     expense_id: UUID,
     expense_update: ExpenseUpdate,
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    current_user: Union[Admin, User] = Depends(get_current_admin_or_user)
 ) -> ExpenseRead:
     """
     Update an expense record.
@@ -593,7 +593,7 @@ async def get_reimbursement_report(
 async def get_expense_summary(
     *,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user),
+    current_user: Union[Admin, User] = Depends(get_current_admin_or_user),
     start_date: Optional[date] = Query(None, description="Summary start date"),
     end_date: Optional[date] = Query(None, description="Summary end date"),
     branch_id: Optional[UUID] = Query(None, description="Filter by branch (admins only)")
