@@ -1,5 +1,5 @@
 import os
-from fastapi import Request
+from fastapi import Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import RedirectResponse
@@ -76,6 +76,31 @@ async def doc_protect_middleware(request: Request, call_next):
 def setup_https_redirect(app):
     """HTTPS redirect disabled - Railway handles SSL termination."""
     print("ℹ️ HTTPS redirect disabled (Railway handles SSL termination)")
+
+async def ensure_https_redirect_middleware(request: Request, call_next):
+    """
+    Middleware to ensure redirects use HTTPS in production while avoiding redirect loops.
+    Only applies to Railway production environment.
+    """
+    response = await call_next(request)
+    
+    # Only apply in production (Railway provides RAILWAY_PROJECT_ID when deployed)
+    if os.getenv("RAILWAY_PROJECT_ID") and response.status_code in (301, 302, 307, 308):
+        # Check if this is a redirect response
+        if "location" in response.headers:
+            location = response.headers["location"]
+            # Convert HTTP redirects to HTTPS
+            if location.startswith("http://"):
+                response.headers["location"] = location.replace("http://", "https://", 1)
+                print(f"🔄 Converted redirect from HTTP to HTTPS: {location}")
+    
+    return response
+
+def setup_redirect_protocol_fix(app):
+    """Add middleware to fix redirect protocols in production."""
+    if os.getenv("RAILWAY_PROJECT_ID"):
+        app.middleware("http")(ensure_https_redirect_middleware)
+        print("🔧 Redirect protocol fix enabled for production")
 
 def add_doc_protect(app):
     app.middleware("http")(doc_protect_middleware)
