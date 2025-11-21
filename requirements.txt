@@ -4,9 +4,14 @@ python-dotenv
 databases[asyncpg]
 databases[aiosqlite]
 fastapi<=0.111.0
-uvicorn
-sqlalchemy
+uvicorn[standard]
+sqlalchemy[asyncio]
 itsdangerous
 pytest
 pydantic>=2.7.0
 pydantic-settings
+psycopg[binary]
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt==4.3.0
+python-multipart
