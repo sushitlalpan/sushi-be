@@ -157,6 +157,36 @@ async def list_expense_records(
         order_by=order_by
     )
     
+    # Convert Expense objects to ExpenseWithDetails by adding worker_username and branch_name
+    expenses_with_details = []
+    for expense in expense_records:
+        expense_dict = {
+            "id": expense.id,
+            "expense_date": expense.expense_date,
+            "expense_description": expense.expense_description,
+            "vendor_payee": expense.vendor_payee,
+            "expense_category": expense.expense_category,
+            "quantity": expense.quantity,
+            "unit_of_measure": expense.unit_of_measure,
+            "total_amount": expense.total_amount,
+            "tax_amount": expense.tax_amount,
+            "receipt_number": expense.receipt_number,
+            "payment_method": expense.payment_method,
+            "is_reimbursable": expense.is_reimbursable,
+            "notes": expense.notes,
+            "worker_id": expense.worker_id,
+            "branch_id": expense.branch_id,
+            "unit_cost": expense.unit_cost,
+            "created_at": expense.created_at,
+            "updated_at": expense.updated_at,
+            "worker_username": expense.worker.username if expense.worker else "",
+            "branch_name": expense.branch.name if expense.branch else "",
+            "net_amount": expense.total_amount - (expense.tax_amount or Decimal("0")),
+            "has_receipt": bool(expense.receipt_number and expense.receipt_number.strip()),
+            "is_pending_reimbursement": expense.is_reimbursable == "pending"
+        }
+        expenses_with_details.append(ExpenseWithDetails(**expense_dict))
+    
     # Get total count for pagination
     total_count = expense_crud.get_expenses_count(
         db=db,
@@ -164,7 +194,7 @@ async def list_expense_records(
     )
     
     return ExpenseListResponse(
-        expenses=expense_records,
+        expenses=expenses_with_details,
         total_count=total_count,
         skip=skip,
         limit=limit,
@@ -264,6 +294,36 @@ async def search_expense_records(
         order_by=order_by
     )
     
+    # Convert Expense objects to ExpenseWithDetails by adding worker_username and branch_name
+    expenses_with_details = []
+    for expense in expense_records:
+        expense_dict = {
+            "id": expense.id,
+            "expense_date": expense.expense_date,
+            "expense_description": expense.expense_description,
+            "vendor_payee": expense.vendor_payee,
+            "expense_category": expense.expense_category,
+            "quantity": expense.quantity,
+            "unit_of_measure": expense.unit_of_measure,
+            "total_amount": expense.total_amount,
+            "tax_amount": expense.tax_amount,
+            "receipt_number": expense.receipt_number,
+            "payment_method": expense.payment_method,
+            "is_reimbursable": expense.is_reimbursable,
+            "notes": expense.notes,
+            "worker_id": expense.worker_id,
+            "branch_id": expense.branch_id,
+            "unit_cost": expense.unit_cost,
+            "created_at": expense.created_at,
+            "updated_at": expense.updated_at,
+            "worker_username": expense.worker.username if expense.worker else "",
+            "branch_name": expense.branch.name if expense.branch else "",
+            "net_amount": expense.total_amount - (expense.tax_amount or Decimal("0")),
+            "has_receipt": bool(expense.receipt_number and expense.receipt_number.strip()),
+            "is_pending_reimbursement": expense.is_reimbursable == "pending"
+        }
+        expenses_with_details.append(ExpenseWithDetails(**expense_dict))
+    
     # Get total count with same filters
     total_count = expense_crud.get_expenses_count(
         db=db,
@@ -281,7 +341,7 @@ async def search_expense_records(
     )
     
     return ExpenseListResponse(
-        expenses=expense_records,
+        expenses=expenses_with_details,
         total_count=total_count,
         skip=skip,
         limit=limit,
@@ -482,6 +542,39 @@ async def get_reimbursement_report(
             branch_id=branch_id,
             status_filter=status_filter
         )
+        
+        # Convert Expense objects to ExpenseWithDetails in expense_records
+        expenses_with_details = []
+        for expense in report_data["expense_records"]:
+            expense_dict = {
+                "id": expense.id,
+                "expense_date": expense.expense_date,
+                "expense_description": expense.expense_description,
+                "vendor_payee": expense.vendor_payee,
+                "expense_category": expense.expense_category,
+                "quantity": expense.quantity,
+                "unit_of_measure": expense.unit_of_measure,
+                "total_amount": expense.total_amount,
+                "tax_amount": expense.tax_amount,
+                "receipt_number": expense.receipt_number,
+                "payment_method": expense.payment_method,
+                "is_reimbursable": expense.is_reimbursable,
+                "notes": expense.notes,
+                "worker_id": expense.worker_id,
+                "branch_id": expense.branch_id,
+                "unit_cost": expense.unit_cost,
+                "created_at": expense.created_at,
+                "updated_at": expense.updated_at,
+                "worker_username": expense.worker.username if expense.worker else "",
+                "branch_name": expense.branch.name if expense.branch else "",
+                "net_amount": expense.total_amount - (expense.tax_amount or Decimal("0")),
+                "has_receipt": bool(expense.receipt_number and expense.receipt_number.strip()),
+                "is_pending_reimbursement": expense.is_reimbursable == "pending"
+            }
+            expenses_with_details.append(ExpenseWithDetails(**expense_dict))
+        
+        # Replace expense_records with converted objects
+        report_data["expense_records"] = expenses_with_details
         
         return ReimbursementReport(**report_data)
     except Exception as e:

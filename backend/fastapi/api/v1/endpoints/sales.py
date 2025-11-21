@@ -134,6 +134,37 @@ async def list_sales_records(
         order_by=order_by
     )
     
+    # Convert Sales objects to SalesWithDetails by adding worker_username and branch_name
+    sales_with_details = []
+    for sales in sales_records:
+        sales_dict = {
+            "id": sales.id,
+            "closure_date": sales.closure_date,
+            "closure_number": sales.closure_number,
+            "worker_id": sales.worker_id,
+            "branch_id": sales.branch_id,
+            "payments_nbr": sales.payments_nbr,
+            "sales_total": sales.sales_total,
+            "card_itpv": sales.card_itpv,
+            "card_refund": sales.card_refund,
+            "card_kiwi": sales.card_kiwi,
+            "transfer_amt": sales.transfer_amt,
+            "card_total": sales.card_total,
+            "cash_amt": sales.cash_amt,
+            "cash_refund": sales.cash_refund,
+            "cash_total": sales.cash_total,
+            "discrepancy": sales.discrepancy,
+            "avg_sale": sales.avg_sale,
+            "kiwi_fee_total": sales.kiwi_fee_total,
+            "card_kiwi_minus_fee": sales.card_kiwi_minus_fee,
+            "revenue_total": sales.revenue_total,
+            "notes": sales.notes,
+            "created_at": sales.created_at,
+            "worker_username": sales.worker.username if sales.worker else "",
+            "branch_name": sales.branch.name if sales.branch else ""
+        }
+        sales_with_details.append(SalesWithDetails(**sales_dict))
+    
     # Get total count for pagination
     total_count = sales_crud.get_sales_count(
         db=db,
@@ -141,7 +172,7 @@ async def list_sales_records(
     )
     
     return SalesListResponse(
-        sales=sales_records,
+        sales=sales_with_details,
         total_count=total_count,
         skip=skip,
         limit=limit,
@@ -228,6 +259,37 @@ async def search_sales_records(
             if abs(record.discrepancy) >= min_discrepancy
         ]
     
+    # Convert Sales objects to SalesWithDetails by adding worker_username and branch_name
+    sales_with_details = []
+    for sales in sales_records:
+        sales_dict = {
+            "id": sales.id,
+            "closure_date": sales.closure_date,
+            "closure_number": sales.closure_number,
+            "worker_id": sales.worker_id,
+            "branch_id": sales.branch_id,
+            "payments_nbr": sales.payments_nbr,
+            "sales_total": sales.sales_total,
+            "card_itpv": sales.card_itpv,
+            "card_refund": sales.card_refund,
+            "card_kiwi": sales.card_kiwi,
+            "transfer_amt": sales.transfer_amt,
+            "card_total": sales.card_total,
+            "cash_amt": sales.cash_amt,
+            "cash_refund": sales.cash_refund,
+            "cash_total": sales.cash_total,
+            "discrepancy": sales.discrepancy,
+            "avg_sale": sales.avg_sale,
+            "kiwi_fee_total": sales.kiwi_fee_total,
+            "card_kiwi_minus_fee": sales.card_kiwi_minus_fee,
+            "revenue_total": sales.revenue_total,
+            "notes": sales.notes,
+            "created_at": sales.created_at,
+            "worker_username": sales.worker.username if sales.worker else "",
+            "branch_name": sales.branch.name if sales.branch else ""
+        }
+        sales_with_details.append(SalesWithDetails(**sales_dict))
+    
     # Get total count with same filters
     total_count = sales_crud.get_sales_count(
         db=db,
@@ -243,10 +305,10 @@ async def search_sales_records(
     if min_discrepancy is not None:
         # Note: This is approximate since we're filtering post-query
         # For exact counts, we'd need to modify the CRUD function
-        total_count = len(sales_records) if skip == 0 else total_count
+        total_count = len(sales_with_details) if skip == 0 else total_count
     
     return SalesListResponse(
-        sales=sales_records,
+        sales=sales_with_details,
         total_count=total_count,
         skip=skip,
         limit=limit,
@@ -432,6 +494,40 @@ async def get_discrepancy_report(
             branch_id=branch_id,
             min_discrepancy=min_discrepancy
         )
+        
+        # Convert Sales objects to SalesWithDetails in discrepancy_records
+        sales_with_details = []
+        for sales in report_data["discrepancy_records"]:
+            sales_dict = {
+                "id": sales.id,
+                "closure_date": sales.closure_date,
+                "closure_number": sales.closure_number,
+                "worker_id": sales.worker_id,
+                "branch_id": sales.branch_id,
+                "payments_nbr": sales.payments_nbr,
+                "sales_total": sales.sales_total,
+                "card_itpv": sales.card_itpv,
+                "card_refund": sales.card_refund,
+                "card_kiwi": sales.card_kiwi,
+                "transfer_amt": sales.transfer_amt,
+                "card_total": sales.card_total,
+                "cash_amt": sales.cash_amt,
+                "cash_refund": sales.cash_refund,
+                "cash_total": sales.cash_total,
+                "discrepancy": sales.discrepancy,
+                "avg_sale": sales.avg_sale,
+                "kiwi_fee_total": sales.kiwi_fee_total,
+                "card_kiwi_minus_fee": sales.card_kiwi_minus_fee,
+                "revenue_total": sales.revenue_total,
+                "notes": sales.notes,
+                "created_at": sales.created_at,
+                "worker_username": sales.worker.username if sales.worker else "",
+                "branch_name": sales.branch.name if sales.branch else ""
+            }
+            sales_with_details.append(SalesWithDetails(**sales_dict))
+        
+        # Replace discrepancy_records with converted objects
+        report_data["discrepancy_records"] = sales_with_details
         
         return DiscrepancyReport(**report_data)
     except Exception as e:

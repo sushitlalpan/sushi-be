@@ -152,6 +152,162 @@ async def list_payroll_records(
         )
 
 
+@router.get(
+    "/search",
+    response_model=PayrollListResponse,
+    summary="Search Payroll Records",
+    description="Search payroll records with advanced filtering options."
+)
+async def search_payroll_records(
+    *,
+    db: Session = Depends(get_sync_db),
+    current_admin: Admin = RequireActiveAdmin,
+    worker: Optional[UUID] = Query(None, description="Filter by worker ID"),
+    branch: Optional[UUID] = Query(None, description="Filter by branch ID"),
+    start_date: Optional[date] = Query(None, description="Filter from this date (YYYY-MM-DD)"),
+    end_date: Optional[date] = Query(None, description="Filter until this date (YYYY-MM-DD)"),
+    payroll_type: Optional[str] = Query(None, description="Filter by payroll type"),
+    min_amount: Optional[float] = Query(None, ge=0, description="Minimum payroll amount"),
+    max_amount: Optional[float] = Query(None, ge=0, description="Maximum payroll amount"),
+    min_days: Optional[int] = Query(None, ge=0, le=31, description="Minimum days worked"),
+    max_days: Optional[int] = Query(None, ge=0, le=31, description="Maximum days worked"),
+    has_notes: Optional[bool] = Query(None, description="Filter by notes presence"),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    order_by: str = Query(
+        "date_desc",
+        pattern="^(date_desc|date_asc|amount_desc|amount_asc|days_desc|days_asc)$",
+        description="Sort order"
+    )
+) -> PayrollListResponse:
+    """
+    Search payroll records with advanced filtering (admin-only endpoint).
+    
+    **Permissions:** Requires active admin authentication
+    
+    **Available filters:**
+    - **worker**: Filter by specific worker ID
+    - **branch**: Filter by specific branch ID
+    - **start_date**: Records from this date onwards
+    - **end_date**: Records until this date
+    - **payroll_type**: Filter by payroll type (e.g., "regular", "overtime")
+    - **min_amount**: Minimum payroll amount
+    - **max_amount**: Maximum payroll amount
+    - **min_days**: Minimum days worked
+    - **max_days**: Maximum days worked
+    - **has_notes**: Filter by notes presence (true/false)
+    
+    **Sorting options:**
+    - **date_desc**: Newest records first (default)
+    - **date_asc**: Oldest records first
+    - **amount_desc**: Highest amounts first
+    - **amount_asc**: Lowest amounts first
+    - **days_desc**: Most days worked first
+    - **days_asc**: Least days worked first
+    
+    **Returns:**
+    - Paginated list of payroll records with worker and branch details
+    
+    **Errors:**
+    - **401**: Not authenticated or not admin
+    - **403**: Admin account deactivated
+    - **400**: Invalid date range or filter parameters
+    """
+    # Validate date range
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date must be before or equal to end_date"
+        )
+    
+    # Validate amount range
+    if min_amount is not None and max_amount is not None and min_amount > max_amount:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="min_amount must be less than or equal to max_amount"
+        )
+    
+    # Validate days range
+    if min_days is not None and max_days is not None and min_days > max_days:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="min_days must be less than or equal to max_days"
+        )
+    
+    try:
+        # Get payroll records with filtering
+        payrolls = get_payrolls(
+            db,
+            skip=skip,
+            limit=limit,
+            worker_id=worker,
+            branch_id=branch,
+            payroll_type=payroll_type,
+            start_date=start_date,
+            end_date=end_date,
+            order_by=order_by
+        )
+        
+        # Apply additional filtering not supported by CRUD function
+        filtered_payrolls = []
+        for payroll in payrolls:
+            # Apply amount filters
+            if min_amount is not None and float(payroll.amount) < min_amount:
+                continue
+            if max_amount is not None and float(payroll.amount) > max_amount:
+                continue
+            
+            # Apply days worked filters
+            if min_days is not None and payroll.days_worked < min_days:
+                continue
+            if max_days is not None and payroll.days_worked > max_days:
+                continue
+            
+            # Apply notes filter
+            if has_notes is not None:
+                has_payroll_notes = bool(payroll.notes and payroll.notes.strip())
+                if has_notes != has_payroll_notes:
+                    continue
+            
+            filtered_payrolls.append(payroll)
+        
+        # Convert to detailed format
+        payroll_details = []
+        for payroll in filtered_payrolls:
+            payroll_details.append(PayrollWithDetails(
+                **payroll.__dict__,
+                worker_username=payroll.worker.username if payroll.worker else "",
+                branch_name=payroll.branch.name if payroll.branch else ""
+            ))
+        
+        # Get total count with same base filters (approximation due to additional filtering)
+        base_total = get_payrolls_count(
+            db,
+            worker_id=worker,
+            branch_id=branch,
+            payroll_type=payroll_type,
+            start_date=start_date,
+            end_date=end_date
+        )
+        
+        # Note: Total count is approximate since we apply additional filters in Python
+        # For exact count, we'd need to modify the CRUD function
+        
+        return PayrollListResponse(
+            payroll_records=payroll_details,
+            total=base_total,  # Approximate total
+            skip=skip,
+            limit=limit
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search payroll records: {str(e)}"
+        )
+
+
 @router.get("/{payroll_id}", response_model=PayrollWithDetails, summary="Get Payroll Record by ID")
 async def get_payroll_record(
     payroll_id: UUID,

@@ -226,26 +226,30 @@ async def list_users(
     branch: Optional[str] = Query(None, description="Filter by branch"),
     include_inactive: bool = Query(False, description="Include inactive users"),
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_user: Admin | User = Depends(get_current_admin_or_user)
 ):
     """
-    Get list of all staff users (admin-only endpoint).
+    Get list of all staff users.
     
-    **Permissions:** Requires active admin authentication
+    **Permissions:** Requires authentication (admin or user)
     
     **Parameters:**
     - **skip**: Number of records to skip (pagination)
     - **limit**: Maximum number of records to return (1-1000)
     - **branch**: Filter by specific branch (optional)
-    - **include_inactive**: Include deactivated users
+    - **include_inactive**: Include deactivated users (admins only)
     
     **Returns:**
     - List of staff users (without passwords)
     
     **Errors:**
-    - **401**: Not authenticated or not admin
-    - **403**: Admin account deactivated
+    - **401**: Not authenticated
+    - **403**: Account deactivated
     """
+    # Users cannot see inactive users, only admins can
+    if not isinstance(current_user, Admin):
+        include_inactive = False
+        
     users = get_users(db, skip=skip, limit=limit, branch=branch, include_inactive=include_inactive)
     return [
         UserRead(
@@ -270,12 +274,12 @@ async def list_users(
 async def get_user_by_id(
     user_id: UUID,
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_user: Admin | User = Depends(get_current_admin_or_user)
 ):
     """
-    Get specific staff user by ID (admin-only endpoint).
+    Get specific staff user by ID.
     
-    **Permissions:** Requires active admin authentication
+    **Permissions:** Requires authentication (admin or user)
     
     **Parameters:**
     - **user_id**: UUID of the staff user
@@ -284,8 +288,8 @@ async def get_user_by_id(
     - Staff user information (without password)
     
     **Errors:**
-    - **401**: Not authenticated or not admin
-    - **403**: Admin account deactivated
+    - **401**: Not authenticated
+    - **403**: Account deactivated
     - **404**: User not found
     - **422**: Invalid UUID format
     """

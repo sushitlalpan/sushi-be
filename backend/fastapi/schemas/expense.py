@@ -340,7 +340,7 @@ class ExpenseSummary(BaseModel):
 class ExpenseListResponse(BaseModel):
     """Schema for paginated expense list responses."""
     
-    expenses: List[ExpenseRead] = Field(
+    expenses: List[ExpenseWithDetails] = Field(
         ...,
         description="List of expense records"
     )
@@ -433,7 +433,7 @@ class ReimbursementReport(BaseModel):
         description="Reimbursement breakdown by worker"
     )
     
-    expense_records: List[ExpenseRead] = Field(
+    expense_records: List[ExpenseWithDetails] = Field(
         ...,
         description="List of expenses requiring attention"
     )

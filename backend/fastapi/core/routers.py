@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from backend.fastapi.api.v1.endpoints import base, doc, message, admin, user, time_entry, branch, payroll, sales, expense
+from backend.fastapi.api.v1.endpoints import base, doc, message, admin, user, time_entry, branch, payroll, sales, expense, general
 
 def setup_routers(app: FastAPI):
     # Main and documentation routes
@@ -32,3 +32,6 @@ def setup_routers(app: FastAPI):
     
     # Expense and reimbursement management routes
     app.include_router(expense.router, prefix="/api/v1/expenses", tags=["expense-management"])
+    
+    # General combined data routes
+    app.include_router(general.router, prefix="/api/v1/general", tags=["general-data"])

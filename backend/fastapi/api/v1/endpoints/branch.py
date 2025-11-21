@@ -20,7 +20,8 @@ from backend.fastapi.crud.branch import (
     update_branch, delete_branch, get_branch_with_stats,
     get_branches_with_stats, search_branches
 )
-from backend.security.dependencies import RequireActiveAdmin
+from backend.security.dependencies import RequireActiveAdmin, get_current_admin_or_user
+from backend.fastapi.models.user import User
 
 
 router = APIRouter(tags=["branch-management"])
@@ -68,27 +69,31 @@ async def list_branches(
     search: Optional[str] = Query(None, description="Search term for branch names"),
     include_stats: bool = Query(False, description="Include user and payroll statistics"),
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_user: Admin | User = Depends(get_current_admin_or_user)
 ):
     """
-    Get list of all branches (admin-only endpoint).
+    Get list of all branches.
     
-    **Permissions:** Requires active admin authentication
+    **Permissions:** Requires authentication (admin or user)
     
     **Parameters:**
     - **skip**: Number of records to skip (pagination)
     - **limit**: Maximum number of records to return
     - **search**: Optional search term for branch names
-    - **include_stats**: Whether to include user and payroll counts
+    - **include_stats**: Whether to include user and payroll counts (admins only)
     
     **Returns:**
     - Paginated list of branches with total count
     
     **Errors:**
-    - **401**: Not authenticated or not admin
-    - **403**: Admin account deactivated
+    - **401**: Not authenticated
+    - **403**: Account deactivated
     """
     try:
+        # Users cannot access stats, only admins can
+        if include_stats and not isinstance(current_user, Admin):
+            include_stats = False
+            
         if search:
             branches = search_branches(db, search, skip=skip, limit=limit)
             total = len(search_branches(db, search, skip=0, limit=1000))  # Get total for searched results
@@ -118,22 +123,22 @@ async def list_branches(
 async def get_branch_by_id(
     branch_id: UUID,
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_user: Admin | User = Depends(get_current_admin_or_user)
 ):
     """
-    Get specific branch by ID with statistics (admin-only endpoint).
+    Get specific branch by ID with statistics.
     
-    **Permissions:** Requires active admin authentication
+    **Permissions:** Requires authentication (admin or user)
     
     **Parameters:**
     - **branch_id**: UUID of the branch
     
     **Returns:**
-    - Branch information with user and payroll statistics
+    - Branch information with statistics (stats only visible to admins)
     
     **Errors:**
-    - **401**: Not authenticated or not admin
-    - **403**: Admin account deactivated
+    - **401**: Not authenticated
+    - **403**: Account deactivated
     - **404**: Branch not found
     - **422**: Invalid UUID format
     """

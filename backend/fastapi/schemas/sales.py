@@ -403,12 +403,12 @@ class SalesSummary(BaseModel):
 class SalesListResponse(BaseModel):
     """Schema for paginated sales listing."""
     
-    sales_records: List[SalesWithDetails] = Field(
+    sales: List[SalesWithDetails] = Field(
         ...,
         description="List of sales records"
     )
     
-    total: int = Field(
+    total_count: int = Field(
         ...,
         description="Total number of sales records"
     )
@@ -421,6 +421,11 @@ class SalesListResponse(BaseModel):
     limit: int = Field(
         ...,
         description="Maximum number of records returned"
+    )
+    
+    has_next: bool = Field(
+        ...,
+        description="Whether there are more records available"
     )
 
 
