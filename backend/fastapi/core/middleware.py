@@ -2,6 +2,7 @@ import os
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.responses import RedirectResponse
 from backend.fastapi.core.init_settings import global_settings
 
@@ -72,6 +73,13 @@ async def doc_protect_middleware(request: Request, call_next):
             return RedirectResponse(url="/login")
     response = await call_next(request)
     return response
+
+def setup_https_redirect(app):
+    """Add HTTPS redirect middleware for production."""
+    if hasattr(global_settings, 'ENV_MODE') and global_settings.ENV_MODE == 'prod':
+        # Force HTTPS in production
+        app.add_middleware(HTTPSRedirectMiddleware)
+        print("🔒 HTTPS redirect middleware enabled for production")
 
 def add_doc_protect(app):
     app.middleware("http")(doc_protect_middleware)
