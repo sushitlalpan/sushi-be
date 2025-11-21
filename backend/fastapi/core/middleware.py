@@ -1,3 +1,4 @@
+import os
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -5,23 +6,58 @@ from fastapi.responses import RedirectResponse
 from backend.fastapi.core.init_settings import global_settings
 
 def setup_cors(app):
-    # Define allowed origins from environment variables
-    origins = [
-        global_settings.API_BASE_URL,
-        global_settings.CLIENT_URL,
-        "http://localhost",
-        "http://localhost:5000",
-        "http://localhost:3000",
-        "http://localhost:8000",
-    ]
+    # Check if we should allow all origins (for debugging)
+    allow_all_origins = os.getenv("ALLOW_ALL_ORIGINS", "false").lower() == "true"
+    
+    if allow_all_origins:
+        print("⚠️ WARNING: CORS is set to allow ALL origins. Only use this for debugging!")
+        origins = ["*"]
+        allow_credentials = False  # Can't use credentials with wildcard origins
+    else:
+        # Define allowed origins from environment variables
+        origins = [
+            global_settings.CLIENT_URL,
+            "http://localhost",
+            "http://localhost:5000", 
+            "http://localhost:3000",
+            "http://localhost:8000",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5000",
+            "http://127.0.0.1:8000"
+        ]
+        
+        # Add API_BASE_URL if it's different from CLIENT_URL and not empty
+        if global_settings.API_BASE_URL and global_settings.API_BASE_URL != global_settings.CLIENT_URL:
+            origins.append(global_settings.API_BASE_URL)
+        
+        # Add additional origins from environment variable
+        additional_origins = os.getenv("ADDITIONAL_CORS_ORIGINS", "")
+        if additional_origins:
+            origins.extend([origin.strip() for origin in additional_origins.split(",")])
+        
+        # Remove empty strings and duplicates
+        origins = list(set([origin for origin in origins if origin]))
+        allow_credentials = True
+    
+    print(f"🌐 CORS allowed origins: {origins}")
     
     # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_credentials=allow_credentials,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        allow_headers=[
+            "*",
+            "Authorization",
+            "Content-Type", 
+            "Accept",
+            "Accept-Language",
+            "Accept-Encoding",
+            "Connection",
+            "User-Agent"
+        ],
+        expose_headers=["*"]
     )
 
 def setup_session(app):
