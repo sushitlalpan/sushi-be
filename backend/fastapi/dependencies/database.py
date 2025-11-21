@@ -16,7 +16,10 @@ async_engine = create_async_engine(settings.ASYNC_DB_URL, echo=False, future=Tru
 AsyncSessionLocal = sessionmaker(bind=async_engine, expire_on_commit=False, class_=AsyncSession)
 
 def init_db():
+    print(f"Creating tables with engine: {sync_engine.url}")
+    print(f"Registered models: {Base.metadata.tables.keys()}")
     Base.metadata.create_all(bind=sync_engine)
+    print("Database initialization completed")
 
 def get_sync_db():
     db = SyncSessionLocal()

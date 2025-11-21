@@ -5,13 +5,16 @@ from fastapi.responses import RedirectResponse
 from backend.fastapi.core.init_settings import global_settings
 
 def setup_cors(app):
-    # Define the allowed origins
+    # Define allowed origins from environment variables
     origins = [
         global_settings.API_BASE_URL,
+        global_settings.CLIENT_URL,
         "http://localhost",
         "http://localhost:5000",
+        "http://localhost:3000",
+        "http://localhost:8000",
     ]
-
+    
     # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,

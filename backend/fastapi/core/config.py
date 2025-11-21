@@ -7,8 +7,21 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
 
     # Username and Password for login
-    USER_NAME: str = os.getenv('USER_NAME', '')
-    PASSWORD: str = os.getenv('PASSWORD', '')
+    USER_NAME: str = ''
+    PASSWORD: str = ''
+    
+    # Database URL (read from .env file)
+    DATABASE_URL: str = ''
+    
+    # JWT Authentication settings
+    JWT_SECRET_KEY: str = 'default-secret-key-change-in-production'
+    JWT_ALGORITHM: str = 'HS256'
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    
+    # Client URL for CORS
+    CLIENT_URL: str = 'http://localhost:3000'
+
+    model_config = SettingsConfigDict(env_file=".env", extra='allow')
 
     @property
     def DB_URL(self):
@@ -30,13 +43,25 @@ class Settings(BaseSettings):
     @property
     def ASYNC_DB_URL(self):
         if self.ENV_MODE == "dev":
-            return "sqlite+aiosqlite:///./dev.db"
+            # Check if we have a PostgreSQL DATABASE_URL in .env for dev mode
+            if self.DATABASE_URL and self.DATABASE_URL.startswith('postgresql'):
+                # Use psycopg for async connections - correct SQLAlchemy syntax for psycopg3
+                URL_split = self.DATABASE_URL.split("://")
+                return f"{URL_split[0]}+psycopg://{URL_split[1]}"
+            else:
+                # Fall back to SQLite for dev mode if no PostgreSQL URL provided
+                return "sqlite+aiosqlite:///./dev.db"
         else:
             if self.DATABASE_URL:
+                # Try asyncpg first, fallback to psycopg if asyncpg not available
                 URL_split = self.DATABASE_URL.split("://")
-                return f"{URL_split[0]}+asyncpg://{URL_split[1]}"
+                try:
+                    import asyncpg
+                    return f"{URL_split[0]}+asyncpg://{URL_split[1]}"
+                except ImportError:
+                    return f"{URL_split[0]}+psycopg://{URL_split[1]}"
             else:
-                return '{}+asyncpg://{}:{}@{}:{}/{}'.format(
+                return '{}+psycopg://{}:{}@{}:{}/{}'.format(
                     self.DB_ENGINE,
                     self.DB_USERNAME,
                     self.DB_PASS,
@@ -56,7 +81,11 @@ class DevSettings(Settings):
     ENV_MODE: str = 'dev'
 
     # Database settings for development
-    DEV_DB_URL: str = "sqlite:///./dev.db"
+    @property  
+    def DEV_DB_URL(self) -> str:
+        # Use PostgreSQL in dev mode if DATABASE_URL is provided in .env
+        # Otherwise fall back to SQLite
+        return self.DATABASE_URL if self.DATABASE_URL else "sqlite:///./dev.db"
 
     model_config = SettingsConfigDict(env_file=".env", extra='allow')
 
@@ -65,18 +94,15 @@ class ProdSettings(Settings):
     ENV_MODE: str = 'prod'
 
     # Database settings for production
-    DB_ENGINE: str = os.getenv('DB_ENGINE', '')
-    DB_USERNAME: str = os.getenv('DB_USERNAME', '')
-    DB_PASS: str = os.getenv('DB_PASS', '')
-    DB_HOST: str = os.getenv('DB_HOST', '')
-    DB_PORT: str = os.getenv('DB_PORT', '')
-    DB_NAME: str = os.getenv('DB_NAME', '')
-
-    # Extra Database settings for deploying on Railway; if you provide DATABASE_URL, the above settings will be ignored
-    DATABASE_URL: str = os.getenv('DATABASE_URL', '')
+    DB_ENGINE: str = ''
+    DB_USERNAME: str = ''
+    DB_PASS: str = ''
+    DB_HOST: str = ''
+    DB_PORT: str = ''
+    DB_NAME: str = ''
 
     # Define HOST_URL based on environment mode
-    HOST_URL : str = os.getenv('HOST_URL ', '')
+    HOST_URL: str = ''
 
     # Database settings for production
     model_config = SettingsConfigDict(env_file=".env", extra='allow')

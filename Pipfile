@@ -1,0 +1,27 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+trio = "*"
+psycopg2-binary = "*"
+python-dotenv = "*"
+fastapi = "<=0.111.0"
+sqlalchemy = {extras = ["asyncio"], version = "*"}
+itsdangerous = "*"
+pytest = "*"
+pydantic = ">=2.7.0"
+pydantic-settings = "*"
+databases = {extras = ["aiosqlite"], version = "*"}
+psycopg = {extras = ["binary"], version = "*"}
+python-jose = {extras = ["cryptography"], version = "*"}
+passlib = {extras = ["bcrypt"], version = "*"}
+bcrypt = "==4.3.0"
+python-multipart = "*"
+uvicorn = {extras = ["standard"], version = "*"}
+
+[dev-packages]
+
+[requires]
+python_version = "3.11"

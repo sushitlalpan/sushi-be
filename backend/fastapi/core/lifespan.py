@@ -4,6 +4,9 @@ from backend.fastapi.dependencies.database import init_db, AsyncSessionLocal
 from backend.fastapi.crud.message import create_message_dict_async
 from backend.data.init_data import models_data
 
+# Import all models to ensure they're registered with Base.metadata
+from backend.fastapi.models import Message, Admin
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize the database connection

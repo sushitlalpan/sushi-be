@@ -163,4 +163,7 @@ pip-selfcheck.json
 # Image files
 /tmp
 
+# Environment variables file
+.env
+
 # End of https://www.toptal.com/developers/gitignore/api/python
