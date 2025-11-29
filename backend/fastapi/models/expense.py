@@ -153,6 +153,21 @@ class Expense(Base):
         doc="Additional notes or comments about the expense"
     )
     
+    # Review fields
+    review_state = Column(
+        String(20),
+        nullable=False,
+        default="pending",
+        index=True,
+        doc="Review status of the expense (pending, approved, rejected)"
+    )
+    
+    review_observations = Column(
+        Text,
+        nullable=True,
+        doc="Review observations or comments from supervisor/manager"
+    )
+    
     # Timestamps
     created_at = Column(
         DateTime(timezone=True),
@@ -196,6 +211,13 @@ class Expense(Base):
         if value and value.lower() not in ['yes', 'no', 'pending']:
             raise ValueError("is_reimbursable must be 'yes', 'no', or 'pending'")
         return value.lower() if value else 'no'
+    
+    @validates('review_state')
+    def validate_review_state(self, key, value):
+        """Validate review state."""
+        if value and value.lower() not in ['pending', 'approved', 'rejected']:
+            raise ValueError("review_state must be 'pending', 'approved', or 'rejected'")
+        return value.lower() if value else 'pending'
     
     @validates('expense_category')
     def validate_category(self, key, value):

@@ -5,7 +5,6 @@ name = "pypi"
 
 [packages]
 trio = "*"
-psycopg2-binary = "*"
 python-dotenv = "*"
 fastapi = "<=0.111.0"
 sqlalchemy = {extras = ["asyncio"], version = "*"}
@@ -20,6 +19,7 @@ passlib = {extras = ["bcrypt"], version = "*"}
 bcrypt = "==4.3.0"
 python-multipart = "*"
 uvicorn = {extras = ["standard"], version = "*"}
+psycopg2-binary = "*"
 
 [dev-packages]
 

@@ -24,6 +24,7 @@ from backend.fastapi.crud.user import (
 from backend.security.password import verify_password
 from backend.security.auth import create_user_token
 from backend.security.dependencies import RequireAdmin, RequireActiveAdmin, RequireActiveUser, get_current_admin_or_user
+from backend.fastapi.core.init_settings import global_settings
 
 
 router = APIRouter(tags=["user-authentication"])
@@ -88,7 +89,7 @@ async def user_login(
     return UserTokenResponse(
         access_token=access_token,
         token_type="bearer",
-        expires_in=30 * 60,  # 30 minutes
+        expires_in=global_settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # Convert minutes to seconds
         user=UserRead(
             id=user.id,
             username=user.username,
@@ -196,6 +197,7 @@ async def get_me(
             created_at=user.created_at,
             updated_at=user.updated_at,
             # Admin-specific fields are None
+            branch_id=None,
             branch_name=None,
             phone_number=None,
             fingerprint_id=None,
@@ -211,6 +213,7 @@ async def get_me(
             created_at=user.created_at,
             updated_at=user.updated_at,
             # User-specific fields
+            branch_id=user.branch_id,
             branch_name=user.branch.name if user.branch else "Unknown Branch",
             phone_number=user.phone_number,
             fingerprint_id=user.fingerprint_id,

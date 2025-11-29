@@ -24,7 +24,9 @@ from backend.fastapi.schemas.sales import (
     SalesSummary,
     SalesListResponse,
     SalesPeriodReport,
-    DiscrepancyReport
+    DiscrepancyReport,
+    SalesReviewUpdate,
+    SalesReviewSummary
 )
 from backend.fastapi.crud import sales as sales_crud
 
@@ -68,7 +70,6 @@ async def create_sales_record(
 
 @router.delete(
     "/{sales_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete Sales Record",
     description="Delete a sales record by ID. Only admins can delete sales records."
 )
@@ -77,7 +78,7 @@ async def delete_sales_record(
     db: Session = Depends(get_sync_db),
     sales_id: UUID,
     current_user: Admin = Depends(get_current_admin)
-) -> None:
+):
     """
     Delete a sales record.
     
@@ -90,6 +91,8 @@ async def delete_sales_record(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Sales record with ID {sales_id} not found"
         )
+    
+    return {"message": "Sales record deleted successfully", "sales_id": str(sales_id)}
 
 
 @router.get(
@@ -159,6 +162,8 @@ async def list_sales_records(
             "card_kiwi_minus_fee": sales.card_kiwi_minus_fee,
             "revenue_total": sales.revenue_total,
             "notes": sales.notes,
+            "review_state": sales.review_state,
+            "review_observations": sales.review_observations,
             "created_at": sales.created_at,
             "worker_username": sales.worker.username if sales.worker else "",
             "branch_name": sales.branch.name if sales.branch else ""
@@ -284,6 +289,8 @@ async def search_sales_records(
             "card_kiwi_minus_fee": sales.card_kiwi_minus_fee,
             "revenue_total": sales.revenue_total,
             "notes": sales.notes,
+            "review_state": sales.review_state,
+            "review_observations": sales.review_observations,
             "created_at": sales.created_at,
             "worker_username": sales.worker.username if sales.worker else "",
             "branch_name": sales.branch.name if sales.branch else ""
@@ -626,4 +633,185 @@ async def get_sales_summary(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate sales summary: {str(e)}"
+        )
+
+
+@router.patch(
+    "/{sales_id}/review",
+    response_model=SalesRead,
+    summary="Update Sales Review Status",
+    description="Update the review state and observations for a sales record. Admin only."
+)
+async def update_sales_review(
+    *,
+    db: Session = Depends(get_sync_db),
+    sales_id: UUID,
+    review_update: SalesReviewUpdate,
+    current_admin: Admin = Depends(get_current_admin)
+) -> SalesRead:
+    """
+    Update sales review status and observations.
+    
+    Only admins can update review status.
+    
+    - **review_state**: pending, approved, or rejected
+    - **review_observations**: Optional comments from reviewer
+    """
+    try:
+        sales = sales_crud.update_sales_review_status(
+            db=db,
+            sales_id=sales_id,
+            review_state=review_update.review_state,
+            review_observations=review_update.review_observations
+        )
+        
+        if not sales:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Sales record with ID {sales_id} not found"
+            )
+        
+        return sales
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update sales review: {str(e)}"
+        )
+
+
+@router.get(
+    "/pending-review",
+    response_model=List[SalesWithDetails],
+    summary="Get Sales Records Pending Review",
+    description="Get all sales records that are pending review. Admin only."
+)
+async def get_sales_pending_review(
+    *,
+    db: Session = Depends(get_sync_db),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    current_admin: Admin = Depends(get_current_admin)
+) -> List[SalesWithDetails]:
+    """
+    Get all sales records that are pending review.
+    
+    Only admins can view pending reviews.
+    """
+    try:
+        sales_records = sales_crud.get_sales_pending_review(db=db, skip=skip, limit=limit)
+        
+        # Convert to SalesWithDetails format
+        result = []
+        for sales in sales_records:
+            sales_dict = {
+                "id": sales.id,
+                "worker_id": sales.worker_id,
+                "branch_id": sales.branch_id,
+                "closure_date": sales.closure_date,
+                "closure_number": sales.closure_number,
+                "payments_nbr": sales.payments_nbr,
+                "sales_total": sales.sales_total,
+                "card_itpv": sales.card_itpv,
+                "card_refund": sales.card_refund,
+                "card_kiwi": sales.card_kiwi,
+                "transfer_amt": sales.transfer_amt,
+                "card_total": sales.card_total,
+                "cash_amt": sales.cash_amt,
+                "cash_refund": sales.cash_refund,
+                "cash_total": sales.cash_total,
+                "discrepancy": sales.discrepancy,
+                "avg_sale": sales.avg_sale,
+                "kiwi_fee_total": sales.kiwi_fee_total,
+                "card_kiwi_minus_fee": sales.card_kiwi_minus_fee,
+                "revenue_total": sales.revenue_total,
+                "notes": sales.notes,
+                "review_state": sales.review_state,
+                "review_observations": sales.review_observations,
+                "created_at": sales.created_at,
+                "worker_username": sales.worker.username if sales.worker else "Unknown",
+                "branch_name": sales.branch.name if sales.branch else "Unknown"
+            }
+            result.append(SalesWithDetails(**sales_dict))
+        
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get pending sales records: {str(e)}"
+        )
+
+
+@router.get(
+    "/review/{review_state}",
+    response_model=List[SalesWithDetails],
+    summary="Get Sales Records by Review State",
+    description="Get sales records filtered by review state. Admin only."
+)
+async def get_sales_by_review_state(
+    *,
+    db: Session = Depends(get_sync_db),
+    review_state: str,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    current_admin: Admin = Depends(get_current_admin)
+) -> List[SalesWithDetails]:
+    """
+    Get sales records filtered by review state.
+    
+    - **review_state**: pending, approved, or rejected
+    
+    Only admins can view sales records by review state.
+    """
+    if review_state.lower() not in ['pending', 'approved', 'rejected']:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="review_state must be 'pending', 'approved', or 'rejected'"
+        )
+    
+    try:
+        sales_records = sales_crud.get_sales_by_review_state(
+            db=db, 
+            review_state=review_state.lower(), 
+            skip=skip, 
+            limit=limit
+        )
+        
+        # Convert to SalesWithDetails format
+        result = []
+        for sales in sales_records:
+            sales_dict = {
+                "id": sales.id,
+                "worker_id": sales.worker_id,
+                "branch_id": sales.branch_id,
+                "closure_date": sales.closure_date,
+                "closure_number": sales.closure_number,
+                "payments_nbr": sales.payments_nbr,
+                "sales_total": sales.sales_total,
+                "card_itpv": sales.card_itpv,
+                "card_refund": sales.card_refund,
+                "card_kiwi": sales.card_kiwi,
+                "transfer_amt": sales.transfer_amt,
+                "card_total": sales.card_total,
+                "cash_amt": sales.cash_amt,
+                "cash_refund": sales.cash_refund,
+                "cash_total": sales.cash_total,
+                "discrepancy": sales.discrepancy,
+                "avg_sale": sales.avg_sale,
+                "kiwi_fee_total": sales.kiwi_fee_total,
+                "card_kiwi_minus_fee": sales.card_kiwi_minus_fee,
+                "revenue_total": sales.revenue_total,
+                "notes": sales.notes,
+                "review_state": sales.review_state,
+                "review_observations": sales.review_observations,
+                "created_at": sales.created_at,
+                "worker_username": sales.worker.username if sales.worker else "Unknown",
+                "branch_name": sales.branch.name if sales.branch else "Unknown"
+            }
+            result.append(SalesWithDetails(**sales_dict))
+        
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get sales records by review state: {str(e)}"
         )

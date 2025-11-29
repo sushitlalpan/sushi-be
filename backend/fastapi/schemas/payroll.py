@@ -9,7 +9,15 @@ from uuid import UUID
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, List
+from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict, validator
+
+
+class ReviewState(str, Enum):
+    """Enum for review states."""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 
 class PayrollBase(BaseModel):
@@ -45,6 +53,25 @@ class PayrollBase(BaseModel):
         max_length=500,
         description="Additional notes about the payment"
     )
+    
+    review_state: Optional[str] = Field(
+        default="pending",
+        pattern="^(pending|approved|rejected)$",
+        description="Review status of the payroll entry"
+    )
+    
+    review_observations: Optional[str] = Field(
+        None,
+        max_length=1000,
+        description="Review observations or comments from supervisor"
+    )
+    
+    @validator('review_state')
+    def validate_review_state(cls, v):
+        """Validate review state."""
+        if v and v.lower() not in ['pending', 'approved', 'rejected']:
+            raise ValueError("review_state must be 'pending', 'approved', or 'rejected'")
+        return v.lower() if v else 'pending'
 
 
 class PayrollCreate(PayrollBase):
@@ -118,6 +145,24 @@ class PayrollUpdate(BaseModel):
         max_length=500,
         description="Updated notes"
     )
+    
+    review_state: Optional[str] = Field(
+        None,
+        description="Updated review status"
+    )
+    
+    review_observations: Optional[str] = Field(
+        None,
+        max_length=1000,
+        description="Updated review observations"
+    )
+    
+    @validator('review_state')
+    def validate_review_state(cls, v):
+        """Validate review state."""
+        if v and v.lower() not in ['pending', 'approved', 'rejected']:
+            raise ValueError("review_state must be 'pending', 'approved', or 'rejected'")
+        return v.lower() if v else v
     
     model_config = ConfigDict(
         json_schema_extra={
@@ -296,6 +341,62 @@ class PayrollListResponse(BaseModel):
                 "limit": 10
             }
         }
+    )
+
+
+class PayrollReviewUpdate(BaseModel):
+    """Schema for updating payroll review status."""
+    
+    review_state: ReviewState = Field(
+        ...,
+        description="New review state"
+    )
+    
+    review_observations: Optional[str] = Field(
+        default=None,
+        max_length=1000,
+        description="Review observations or comments"
+    )
+    
+    @validator('review_state')
+    def validate_review_state(cls, v):
+        """Validate review state."""
+        if v and v.lower() not in ['pending', 'approved', 'rejected']:
+            raise ValueError("review_state must be 'pending', 'approved', or 'rejected'")
+        return v.lower() if v else v
+
+
+class PayrollReviewSummary(BaseModel):
+    """Schema for payroll review summary statistics."""
+    
+    pending_count: int = Field(
+        ...,
+        description="Number of payroll records pending review"
+    )
+    
+    approved_count: int = Field(
+        ...,
+        description="Number of approved payroll records"
+    )
+    
+    rejected_count: int = Field(
+        ...,
+        description="Number of rejected payroll records"
+    )
+    
+    pending_amount: Decimal = Field(
+        ...,
+        description="Total amount of payroll pending review"
+    )
+    
+    approved_amount: Decimal = Field(
+        ...,
+        description="Total amount of approved payroll"
+    )
+    
+    rejected_amount: Decimal = Field(
+        ...,
+        description="Total amount of rejected payroll"
     )
 
 

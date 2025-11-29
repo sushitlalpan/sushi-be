@@ -219,6 +219,21 @@ class Sales(Base):
         doc="Additional notes about the closure"
     )
     
+    # Review fields
+    review_state = Column(
+        String(20),
+        nullable=False,
+        default="pending",
+        index=True,
+        doc="Review status of the sales record (pending, approved, rejected)"
+    )
+    
+    review_observations = Column(
+        Text,
+        nullable=True,
+        doc="Review observations or comments from supervisor/manager"
+    )
+    
     # Audit fields
     created_at = Column(
         DateTime(timezone=True),
@@ -274,6 +289,13 @@ class Sales(Base):
         if value is not None and value < 0:
             raise ValueError("payments_nbr must be non-negative")
         return value
+    
+    @validates('review_state')
+    def validate_review_state(self, key, value):
+        """Validate review state."""
+        if value and value.lower() not in ['pending', 'approved', 'rejected']:
+            raise ValueError("review_state must be 'pending', 'approved', or 'rejected'")
+        return value.lower() if value else 'pending'
     
     def calculate_totals(self):
         """

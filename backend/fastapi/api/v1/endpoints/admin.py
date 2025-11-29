@@ -23,6 +23,7 @@ from backend.fastapi.crud.admin import (
 from backend.security.password import verify_password
 from backend.security.auth import create_admin_token
 from backend.security.dependencies import RequireAdmin, RequireActiveAdmin
+from backend.fastapi.core.init_settings import global_settings
 
 
 router = APIRouter(tags=["authentication"])
@@ -86,7 +87,7 @@ async def login(
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
-        expires_in=30 * 60,  # 30 minutes
+        expires_in=global_settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # Convert minutes to seconds
         admin=AdminRead.model_validate(admin)
     )
 

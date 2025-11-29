@@ -64,7 +64,9 @@ def create_expense(db: Session, expense_data: ExpenseCreate) -> Expense:
         receipt_number=expense_data.receipt_number,
         payment_method=expense_data.payment_method,
         is_reimbursable=expense_data.is_reimbursable,
-        notes=expense_data.notes
+        notes=expense_data.notes,
+        review_state=expense_data.review_state,
+        review_observations=expense_data.review_observations
     )
     
     # Calculate unit cost
@@ -321,6 +323,139 @@ def update_expense(db: Session, expense_id: UUID, expense_update: ExpenseUpdate)
     # Recalculate unit cost if amount or quantity changed
     if 'total_amount' in update_data or 'quantity' in update_data:
         db_expense.calculate_unit_cost()
+    
+    db.commit()
+    db.refresh(db_expense)
+    
+    return db_expense
+
+
+def get_expenses_by_review_state(
+    db: Session, 
+    review_state: str, 
+    skip: int = 0, 
+    limit: int = 100,
+    branch_id: Optional[UUID] = None,
+    worker_id: Optional[UUID] = None
+) -> List[Expense]:
+    """
+    Get expenses filtered by review state.
+    
+    Args:
+        db: Database session
+        review_state: Review state to filter by (pending, approved, rejected)
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+        branch_id: Optional branch filter
+        worker_id: Optional worker filter
+        
+    Returns:
+        List of expense records matching the review state
+    """
+    query = (
+        db.query(Expense)
+        .options(joinedload(Expense.worker), joinedload(Expense.branch))
+        .filter(Expense.review_state == review_state.lower())
+        .order_by(desc(Expense.created_at))
+    )
+    
+    if branch_id:
+        query = query.filter(Expense.branch_id == branch_id)
+    
+    if worker_id:
+        query = query.filter(Expense.worker_id == worker_id)
+    
+    return query.offset(skip).limit(limit).all()
+
+
+def count_expenses_by_review_state(
+    db: Session, 
+    review_state: str,
+    branch_id: Optional[UUID] = None,
+    worker_id: Optional[UUID] = None
+) -> int:
+    """
+    Count expenses by review state.
+    
+    Args:
+        db: Database session
+        review_state: Review state to count (pending, approved, rejected)
+        branch_id: Optional branch filter
+        worker_id: Optional worker filter
+        
+    Returns:
+        Number of expense records matching the review state
+    """
+    query = db.query(Expense).filter(Expense.review_state == review_state.lower())
+    
+    if branch_id:
+        query = query.filter(Expense.branch_id == branch_id)
+    
+    if worker_id:
+        query = query.filter(Expense.worker_id == worker_id)
+    
+    return query.count()
+
+
+def get_expenses_by_review_state(db: Session, review_state: str, skip: int = 0, limit: int = 100) -> List[Expense]:
+    """
+    Get expenses filtered by review state.
+    
+    Args:
+        db: Database session
+        review_state: Review state to filter by (pending, approved, rejected)
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+        
+    Returns:
+        List of expense records with the specified review state
+    """
+    return (
+        db.query(Expense)
+        .options(joinedload(Expense.worker), joinedload(Expense.branch))
+        .filter(Expense.review_state == review_state.lower())
+        .order_by(desc(Expense.expense_date))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+def get_expenses_pending_review(db: Session, skip: int = 0, limit: int = 100) -> List[Expense]:
+    """
+    Get expenses that are pending review.
+    
+    Args:
+        db: Database session
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+        
+    Returns:
+        List of expense records pending review
+    """
+    return get_expenses_by_review_state(db, "pending", skip, limit)
+
+
+def update_expense_review_status(db: Session, expense_id: UUID, review_state: str, review_observations: Optional[str] = None) -> Optional[Expense]:
+    """
+    Update the review status of an expense.
+    
+    Args:
+        db: Database session
+        expense_id: Expense unique identifier
+        review_state: New review state (pending, approved, rejected)
+        review_observations: Optional review observations
+        
+    Returns:
+        Updated expense instance if found, None otherwise
+    """
+    db_expense = get_expense(db, expense_id)
+    if not db_expense:
+        return None
+    
+    db_expense.review_state = review_state.lower()
+    if review_observations is not None:
+        db_expense.review_observations = review_observations
     
     db.commit()
     db.refresh(db_expense)
