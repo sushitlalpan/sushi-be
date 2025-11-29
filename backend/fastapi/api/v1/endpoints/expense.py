@@ -24,7 +24,9 @@ from backend.fastapi.schemas.expense import (
     ExpenseSummary,
     ExpenseListResponse,
     ExpensePeriodReport,
-    ReimbursementReport
+    ReimbursementReport,
+    ExpenseReviewUpdate,
+    ExpenseReviewSummary
 )
 from backend.fastapi.crud import expense as expense_crud
 
@@ -75,7 +77,6 @@ async def create_expense_record(
 
 @router.delete(
     "/{expense_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete Expense Record",
     description="Delete an expense record by ID. Users can delete their own expenses, admins can delete any."
 )
@@ -84,7 +85,7 @@ async def delete_expense_record(
     db: Session = Depends(get_sync_db),
     expense_id: UUID,
     current_user: Admin | User = Depends(get_current_admin_or_user)
-) -> None:
+):
     """
     Delete an expense record.
     
@@ -113,6 +114,10 @@ async def delete_expense_record(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete expense record"
         )
+    
+    return {"message": "Expense deleted successfully", "expense_id": str(expense_id)}
+    
+    return {"message": "Expense deleted successfully", "expense_id": str(expense_id)}
 
 
 @router.get(
@@ -174,6 +179,8 @@ async def list_expense_records(
             "payment_method": expense.payment_method,
             "is_reimbursable": expense.is_reimbursable,
             "notes": expense.notes,
+            "review_state": expense.review_state,
+            "review_observations": expense.review_observations,
             "worker_id": expense.worker_id,
             "branch_id": expense.branch_id,
             "unit_cost": expense.unit_cost,
@@ -311,6 +318,8 @@ async def search_expense_records(
             "payment_method": expense.payment_method,
             "is_reimbursable": expense.is_reimbursable,
             "notes": expense.notes,
+            "review_state": expense.review_state,
+            "review_observations": expense.review_observations,
             "worker_id": expense.worker_id,
             "branch_id": expense.branch_id,
             "unit_cost": expense.unit_cost,
@@ -560,6 +569,8 @@ async def get_reimbursement_report(
                 "payment_method": expense.payment_method,
                 "is_reimbursable": expense.is_reimbursable,
                 "notes": expense.notes,
+                "review_state": expense.review_state,
+                "review_observations": expense.review_observations,
                 "worker_id": expense.worker_id,
                 "branch_id": expense.branch_id,
                 "unit_cost": expense.unit_cost,
@@ -692,4 +703,183 @@ async def get_expense_summary(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate expense summary: {str(e)}"
+        )
+
+
+@router.patch(
+    "/{expense_id}/review",
+    response_model=ExpenseRead,
+    summary="Update Expense Review Status",
+    description="Update the review state and observations for an expense record. Admin only."
+)
+async def update_expense_review(
+    *,
+    db: Session = Depends(get_sync_db),
+    expense_id: UUID,
+    review_update: ExpenseReviewUpdate,
+    current_admin: Admin = Depends(get_current_admin)
+) -> ExpenseRead:
+    """
+    Update expense review status and observations.
+    
+    Only admins can update review status.
+    
+    - **review_state**: pending, approved, or rejected
+    - **review_observations**: Optional comments from reviewer
+    """
+    try:
+        expense = expense_crud.update_expense_review_status(
+            db=db,
+            expense_id=expense_id,
+            review_state=review_update.review_state,
+            review_observations=review_update.review_observations
+        )
+        
+        if not expense:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Expense with ID {expense_id} not found"
+            )
+        
+        return expense
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update expense review: {str(e)}"
+        )
+
+
+@router.get(
+    "/pending-review",
+    response_model=List[ExpenseWithDetails],
+    summary="Get Expenses Pending Review",
+    description="Get all expenses that are pending review. Admin only."
+)
+async def get_expenses_pending_review(
+    *,
+    db: Session = Depends(get_sync_db),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    current_admin: Admin = Depends(get_current_admin)
+) -> List[ExpenseWithDetails]:
+    """
+    Get all expenses that are pending review.
+    
+    Only admins can view pending reviews.
+    """
+    try:
+        expenses = expense_crud.get_expenses_pending_review(db=db, skip=skip, limit=limit)
+        
+        # Convert to ExpenseWithDetails format
+        result = []
+        for expense in expenses:
+            expense_dict = {
+                "id": expense.id,
+                "worker_id": expense.worker_id,
+                "branch_id": expense.branch_id,
+                "expense_date": expense.expense_date,
+                "expense_description": expense.expense_description,
+                "vendor_payee": expense.vendor_payee,
+                "expense_category": expense.expense_category,
+                "quantity": expense.quantity,
+                "unit_of_measure": expense.unit_of_measure,
+                "unit_cost": expense.unit_cost,
+                "total_amount": expense.total_amount,
+                "tax_amount": expense.tax_amount,
+                "receipt_number": expense.receipt_number,
+                "payment_method": expense.payment_method,
+                "is_reimbursable": expense.is_reimbursable,
+                "notes": expense.notes,
+                "review_state": expense.review_state,
+                "review_observations": expense.review_observations,
+                "created_at": expense.created_at,
+                "updated_at": expense.updated_at,
+                "worker_username": expense.worker.username if expense.worker else "Unknown",
+                "branch_name": expense.branch.name if expense.branch else "Unknown",
+                "net_amount": expense.net_amount,
+                "has_receipt": expense.has_receipt,
+                "is_pending_reimbursement": expense.is_pending_reimbursement
+            }
+            result.append(ExpenseWithDetails(**expense_dict))
+        
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get pending expenses: {str(e)}"
+        )
+
+
+@router.get(
+    "/review/{review_state}",
+    response_model=List[ExpenseWithDetails],
+    summary="Get Expenses by Review State",
+    description="Get expenses filtered by review state. Admin only."
+)
+async def get_expenses_by_review_state(
+    *,
+    db: Session = Depends(get_sync_db),
+    review_state: str,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    current_admin: Admin = Depends(get_current_admin)
+) -> List[ExpenseWithDetails]:
+    """
+    Get expenses filtered by review state.
+    
+    - **review_state**: pending, approved, or rejected
+    
+    Only admins can view expenses by review state.
+    """
+    if review_state.lower() not in ['pending', 'approved', 'rejected']:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="review_state must be 'pending', 'approved', or 'rejected'"
+        )
+    
+    try:
+        expenses = expense_crud.get_expenses_by_review_state(
+            db=db, 
+            review_state=review_state.lower(), 
+            skip=skip, 
+            limit=limit
+        )
+        
+        # Convert to ExpenseWithDetails format
+        result = []
+        for expense in expenses:
+            expense_dict = {
+                "id": expense.id,
+                "worker_id": expense.worker_id,
+                "branch_id": expense.branch_id,
+                "expense_date": expense.expense_date,
+                "expense_description": expense.expense_description,
+                "vendor_payee": expense.vendor_payee,
+                "expense_category": expense.expense_category,
+                "quantity": expense.quantity,
+                "unit_of_measure": expense.unit_of_measure,
+                "unit_cost": expense.unit_cost,
+                "total_amount": expense.total_amount,
+                "tax_amount": expense.tax_amount,
+                "receipt_number": expense.receipt_number,
+                "payment_method": expense.payment_method,
+                "is_reimbursable": expense.is_reimbursable,
+                "notes": expense.notes,
+                "review_state": expense.review_state,
+                "review_observations": expense.review_observations,
+                "created_at": expense.created_at,
+                "updated_at": expense.updated_at,
+                "worker_username": expense.worker.username if expense.worker else "Unknown",
+                "branch_name": expense.branch.name if expense.branch else "Unknown",
+                "net_amount": expense.net_amount,
+                "has_receipt": expense.has_receipt,
+                "is_pending_reimbursement": expense.is_pending_reimbursement
+            }
+            result.append(ExpenseWithDetails(**expense_dict))
+        
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get expenses by review state: {str(e)}"
         )

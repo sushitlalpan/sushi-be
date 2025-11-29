@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # JWT Authentication settings
     JWT_SECRET_KEY: str = 'default-secret-key-change-in-production'
     JWT_ALGORITHM: str = 'HS256'
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     
     # Client URL for CORS
     CLIENT_URL: str = 'http://localhost:3000'

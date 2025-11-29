@@ -83,7 +83,9 @@ def create_sales(db: Session, sales_data: SalesCreate) -> Sales:
         cash_amt=sales_data.cash_amt,
         cash_refund=sales_data.cash_refund,
         kiwi_fee_total=sales_data.kiwi_fee_total,
-        notes=sales_data.notes
+        notes=sales_data.notes,
+        review_state=sales_data.review_state,
+        review_observations=sales_data.review_observations
     )
     
     # Calculate derived fields
@@ -305,6 +307,139 @@ def update_sales(db: Session, sales_id: UUID, sales_update: SalesUpdate) -> Opti
     
     # Recalculate derived fields
     db_sales.calculate_totals()
+    
+    db.commit()
+    db.refresh(db_sales)
+    
+    return db_sales
+
+
+def get_sales_by_review_state(
+    db: Session, 
+    review_state: str, 
+    skip: int = 0, 
+    limit: int = 100,
+    branch_id: Optional[UUID] = None,
+    worker_id: Optional[UUID] = None
+) -> List[Sales]:
+    """
+    Get sales records filtered by review state.
+    
+    Args:
+        db: Database session
+        review_state: Review state to filter by (pending, approved, rejected)
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+        branch_id: Optional branch filter
+        worker_id: Optional worker filter
+        
+    Returns:
+        List of sales records matching the review state
+    """
+    query = (
+        db.query(Sales)
+        .options(joinedload(Sales.worker), joinedload(Sales.branch))
+        .filter(Sales.review_state == review_state.lower())
+        .order_by(desc(Sales.created_at))
+    )
+    
+    if branch_id:
+        query = query.filter(Sales.branch_id == branch_id)
+    
+    if worker_id:
+        query = query.filter(Sales.worker_id == worker_id)
+    
+    return query.offset(skip).limit(limit).all()
+
+
+def count_sales_by_review_state(
+    db: Session, 
+    review_state: str,
+    branch_id: Optional[UUID] = None,
+    worker_id: Optional[UUID] = None
+) -> int:
+    """
+    Count sales records by review state.
+    
+    Args:
+        db: Database session
+        review_state: Review state to count (pending, approved, rejected)
+        branch_id: Optional branch filter
+        worker_id: Optional worker filter
+        
+    Returns:
+        Number of sales records matching the review state
+    """
+    query = db.query(Sales).filter(Sales.review_state == review_state.lower())
+    
+    if branch_id:
+        query = query.filter(Sales.branch_id == branch_id)
+    
+    if worker_id:
+        query = query.filter(Sales.worker_id == worker_id)
+    
+    return query.count()
+
+
+def get_sales_by_review_state(db: Session, review_state: str, skip: int = 0, limit: int = 100) -> List[Sales]:
+    """
+    Get sales records filtered by review state.
+    
+    Args:
+        db: Database session
+        review_state: Review state to filter by (pending, approved, rejected)
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+        
+    Returns:
+        List of sales records with the specified review state
+    """
+    return (
+        db.query(Sales)
+        .options(joinedload(Sales.worker), joinedload(Sales.branch))
+        .filter(Sales.review_state == review_state.lower())
+        .order_by(desc(Sales.closure_date))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+def get_sales_pending_review(db: Session, skip: int = 0, limit: int = 100) -> List[Sales]:
+    """
+    Get sales records that are pending review.
+    
+    Args:
+        db: Database session
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+        
+    Returns:
+        List of sales records pending review
+    """
+    return get_sales_by_review_state(db, "pending", skip, limit)
+
+
+def update_sales_review_status(db: Session, sales_id: UUID, review_state: str, review_observations: Optional[str] = None) -> Optional[Sales]:
+    """
+    Update the review status of a sales record.
+    
+    Args:
+        db: Database session
+        sales_id: Sales unique identifier
+        review_state: New review state (pending, approved, rejected)
+        review_observations: Optional review observations
+        
+    Returns:
+        Updated sales instance if found, None otherwise
+    """
+    db_sales = get_sales(db, sales_id)
+    if not db_sales:
+        return None
+    
+    db_sales.review_state = review_state.lower()
+    if review_observations is not None:
+        db_sales.review_observations = review_observations
     
     db.commit()
     db.refresh(db_sales)

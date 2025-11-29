@@ -9,8 +9,16 @@ from uuid import UUID
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 from decimal import Decimal
+from enum import Enum
 
 from pydantic import BaseModel, Field, validator, ConfigDict
+
+
+class ReviewState(str, Enum):
+    """Enum for review states."""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 
 class ExpenseBase(BaseModel):
@@ -105,6 +113,19 @@ class ExpenseBase(BaseModel):
         example="Emergency purchase for restaurant operations"
     )
     
+    review_state: Optional[str] = Field(
+        default="pending",
+        pattern="^(pending|approved|rejected)$",
+        description="Review status of the expense",
+        example="pending"
+    )
+    
+    review_observations: Optional[str] = Field(
+        default=None,
+        description="Review observations or comments from supervisor",
+        example="Approved - necessary purchase for operations"
+    )
+    
     @validator('expense_category', 'vendor_payee')
     def normalize_text_fields(cls, v):
         """Normalize text fields by stripping whitespace."""
@@ -116,6 +137,13 @@ class ExpenseBase(BaseModel):
         if v:
             return v.lower()
         return 'no'
+    
+    @validator('review_state')
+    def validate_review_state(cls, v):
+        """Validate and normalize review state."""
+        if v:
+            return v.lower()
+        return 'pending'
 
 
 class ExpenseCreate(ExpenseBase):
@@ -214,6 +242,17 @@ class ExpenseUpdate(BaseModel):
         description="Additional notes"
     )
     
+    review_state: Optional[str] = Field(
+        default=None,
+        pattern="^(pending|approved|rejected)$",
+        description="Review status update"
+    )
+    
+    review_observations: Optional[str] = Field(
+        default=None,
+        description="Review observations update"
+    )
+    
     @validator('expense_category', 'vendor_payee', 'expense_description')
     def normalize_text_fields(cls, v):
         """Normalize text fields by stripping whitespace."""
@@ -222,6 +261,13 @@ class ExpenseUpdate(BaseModel):
     @validator('is_reimbursable')
     def validate_reimbursable_status(cls, v):
         """Validate and normalize reimbursable status."""
+        if v:
+            return v.lower()
+        return v
+    
+    @validator('review_state')
+    def validate_review_state(cls, v):
+        """Validate and normalize review state."""
         if v:
             return v.lower()
         return v
@@ -402,6 +448,59 @@ class ExpensePeriodReport(BaseModel):
     daily_totals: List[Dict[str, Any]] = Field(
         ...,
         description="Daily expense totals"
+    )
+
+
+class ExpenseReviewUpdate(BaseModel):
+    """Schema for updating expense review status."""
+    
+    review_state: ReviewState = Field(
+        ...,
+        description="New review state"
+    )
+    
+    review_observations: Optional[str] = Field(
+        default=None,
+        description="Review observations or comments"
+    )
+    
+    @validator('review_state')
+    def validate_review_state(cls, v):
+        """Validate and normalize review state."""
+        return v.lower() if v else v
+
+
+class ExpenseReviewSummary(BaseModel):
+    """Schema for expense review summary statistics."""
+    
+    pending_count: int = Field(
+        ...,
+        description="Number of expenses pending review"
+    )
+    
+    approved_count: int = Field(
+        ...,
+        description="Number of approved expenses"
+    )
+    
+    rejected_count: int = Field(
+        ...,
+        description="Number of rejected expenses"
+    )
+    
+    pending_amount: Decimal = Field(
+        ...,
+        description="Total amount of expenses pending review"
+    )
+    
+    approved_amount: Decimal = Field(
+        ...,
+        description="Total amount of approved expenses"
+    )
+    
+    rejected_amount: Decimal = Field(
+        ...,
+        description="Total amount of rejected expenses"
     )
 
 

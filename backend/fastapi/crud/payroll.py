@@ -57,7 +57,9 @@ def create_payroll(db: Session, payroll_data: PayrollCreate) -> Payroll:
         days_worked=payroll_data.days_worked,
         amount=payroll_data.amount,
         payroll_type=payroll_data.payroll_type,
-        notes=payroll_data.notes
+        notes=payroll_data.notes,
+        review_state=payroll_data.review_state,
+        review_observations=payroll_data.review_observations
     )
     
     db.add(db_payroll)
@@ -235,6 +237,139 @@ def update_payroll(db: Session, payroll_id: UUID, payroll_update: PayrollUpdate)
     update_data = payroll_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(db_payroll, field, value)
+    
+    db.commit()
+    db.refresh(db_payroll)
+    
+    return db_payroll
+
+
+def get_payroll_by_review_state(
+    db: Session, 
+    review_state: str, 
+    skip: int = 0, 
+    limit: int = 100,
+    branch_id: Optional[UUID] = None,
+    worker_id: Optional[UUID] = None
+) -> List[Payroll]:
+    """
+    Get payroll records filtered by review state.
+    
+    Args:
+        db: Database session
+        review_state: Review state to filter by (pending, approved, rejected)
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+        branch_id: Optional branch filter
+        worker_id: Optional worker filter
+        
+    Returns:
+        List of payroll records matching the review state
+    """
+    query = (
+        db.query(Payroll)
+        .options(joinedload(Payroll.worker), joinedload(Payroll.branch))
+        .filter(Payroll.review_state == review_state.lower())
+        .order_by(desc(Payroll.created_at))
+    )
+    
+    if branch_id:
+        query = query.filter(Payroll.branch_id == branch_id)
+    
+    if worker_id:
+        query = query.filter(Payroll.worker_id == worker_id)
+    
+    return query.offset(skip).limit(limit).all()
+
+
+def count_payroll_by_review_state(
+    db: Session, 
+    review_state: str,
+    branch_id: Optional[UUID] = None,
+    worker_id: Optional[UUID] = None
+) -> int:
+    """
+    Count payroll records by review state.
+    
+    Args:
+        db: Database session
+        review_state: Review state to count (pending, approved, rejected)
+        branch_id: Optional branch filter
+        worker_id: Optional worker filter
+        
+    Returns:
+        Number of payroll records matching the review state
+    """
+    query = db.query(Payroll).filter(Payroll.review_state == review_state.lower())
+    
+    if branch_id:
+        query = query.filter(Payroll.branch_id == branch_id)
+    
+    if worker_id:
+        query = query.filter(Payroll.worker_id == worker_id)
+    
+    return query.count()
+
+
+def get_payroll_by_review_state(db: Session, review_state: str, skip: int = 0, limit: int = 100) -> List[Payroll]:
+    """
+    Get payroll records filtered by review state.
+    
+    Args:
+        db: Database session
+        review_state: Review state to filter by (pending, approved, rejected)
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+        
+    Returns:
+        List of payroll records with the specified review state
+    """
+    return (
+        db.query(Payroll)
+        .options(joinedload(Payroll.worker), joinedload(Payroll.branch))
+        .filter(Payroll.review_state == review_state.lower())
+        .order_by(desc(Payroll.date))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+def get_payroll_pending_review(db: Session, skip: int = 0, limit: int = 100) -> List[Payroll]:
+    """
+    Get payroll records that are pending review.
+    
+    Args:
+        db: Database session
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+        
+    Returns:
+        List of payroll records pending review
+    """
+    return get_payroll_by_review_state(db, "pending", skip, limit)
+
+
+def update_payroll_review_status(db: Session, payroll_id: UUID, review_state: str, review_observations: Optional[str] = None) -> Optional[Payroll]:
+    """
+    Update the review status of a payroll record.
+    
+    Args:
+        db: Database session
+        payroll_id: Payroll unique identifier
+        review_state: New review state (pending, approved, rejected)
+        review_observations: Optional review observations
+        
+    Returns:
+        Updated payroll instance if found, None otherwise
+    """
+    db_payroll = get_payroll(db, payroll_id)
+    if not db_payroll:
+        return None
+    
+    db_payroll.review_state = review_state.lower()
+    if review_observations is not None:
+        db_payroll.review_observations = review_observations
     
     db.commit()
     db.refresh(db_payroll)

@@ -9,7 +9,7 @@ from uuid import uuid4
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Integer, Numeric, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from backend.fastapi.dependencies.database import Base
 
 
@@ -98,6 +98,21 @@ class Payroll(Base):
         doc="Additional notes about the payment"
     )
     
+    # Review fields
+    review_state = Column(
+        String(20),
+        nullable=False,
+        default="pending",
+        index=True,
+        doc="Review status of the payroll entry (pending, approved, rejected)"
+    )
+    
+    review_observations = Column(
+        String(1000),
+        nullable=True,
+        doc="Review observations or comments from supervisor/manager"
+    )
+    
     # Audit fields
     created_at = Column(
         DateTime(timezone=True),
@@ -141,3 +156,10 @@ class Payroll(Base):
     def is_bonus_or_commission(self) -> bool:
         """Check if this is a bonus or commission payment."""
         return self.payroll_type in ["bonus", "commission"]
+    
+    @validates('review_state')
+    def validate_review_state(self, key, value):
+        """Validate review state."""
+        if value and value.lower() not in ['pending', 'approved', 'rejected']:
+            raise ValueError("review_state must be 'pending', 'approved', or 'rejected'")
+        return value.lower() if value else 'pending'

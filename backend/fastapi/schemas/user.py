@@ -201,6 +201,7 @@ class UnifiedProfileRead(BaseModel):
     updated_at: datetime = Field(..., description="Last update timestamp")
     
     # User-specific fields (optional for admins)
+    branch_id: Optional[UUID] = Field(None, description="Branch ID (users only)")
     branch_name: Optional[str] = Field(None, description="Branch name (users only)")
     phone_number: Optional[str] = Field(None, description="Phone number (users only)")
     fingerprint_id: Optional[str] = Field(None, description="Fingerprint ID (users only)")

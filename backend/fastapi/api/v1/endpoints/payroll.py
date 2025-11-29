@@ -17,12 +17,15 @@ from backend.fastapi.models.admin import Admin
 from backend.fastapi.models.user import User
 from backend.fastapi.schemas.payroll import (
     PayrollCreate, PayrollRead, PayrollUpdate, PayrollWithDetails,
-    PayrollListResponse, PayrollSummary, PayrollPeriodReport
+    PayrollListResponse, PayrollSummary, PayrollPeriodReport,
+    PayrollReviewUpdate, PayrollReviewSummary
 )
 from backend.fastapi.crud.payroll import (
     create_payroll, get_payroll, get_payrolls, get_payrolls_count,
     update_payroll, delete_payroll, get_worker_payroll_summary,
-    get_payroll_period_report, get_payroll_with_details
+    get_payroll_period_report, get_payroll_with_details,
+    get_payroll_pending_review, get_payroll_by_review_state,
+    update_payroll_review_status
 )
 from backend.security.dependencies import RequireActiveAdmin, RequireActiveUser
 
@@ -581,4 +584,159 @@ async def get_my_payroll_summary(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve payroll summary: {str(e)}"
+        )
+
+
+@router.patch(
+    "/{payroll_id}/review",
+    response_model=PayrollRead,
+    summary="Update Payroll Review Status",
+    description="Update the review state and observations for a payroll record. Admin only."
+)
+async def update_payroll_review(
+    *,
+    db: Session = Depends(get_sync_db),
+    payroll_id: UUID,
+    review_update: PayrollReviewUpdate,
+    current_admin: Admin = RequireActiveAdmin
+) -> PayrollRead:
+    """
+    Update payroll review status and observations.
+    
+    Only admins can update review status.
+    
+    - **review_state**: pending, approved, or rejected
+    - **review_observations**: Optional comments from reviewer
+    """
+    try:
+        payroll = update_payroll_review_status(
+            db=db,
+            payroll_id=payroll_id,
+            review_state=review_update.review_state,
+            review_observations=review_update.review_observations
+        )
+        
+        if not payroll:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Payroll with ID {payroll_id} not found"
+            )
+        
+        return payroll
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update payroll review: {str(e)}"
+        )
+
+
+@router.get(
+    "/pending-review",
+    response_model=List[PayrollWithDetails],
+    summary="Get Payroll Records Pending Review",
+    description="Get all payroll records that are pending review. Admin only."
+)
+async def get_payroll_pending_review_endpoint(
+    *,
+    db: Session = Depends(get_sync_db),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    current_admin: Admin = RequireActiveAdmin
+) -> List[PayrollWithDetails]:
+    """
+    Get all payroll records that are pending review.
+    
+    Only admins can view pending reviews.
+    """
+    try:
+        payroll_records = get_payroll_pending_review(db=db, skip=skip, limit=limit)
+        
+        # Convert to PayrollWithDetails format
+        result = []
+        for payroll in payroll_records:
+            payroll_dict = {
+                "id": payroll.id,
+                "date": payroll.date,
+                "worker_id": payroll.worker_id,
+                "branch_id": payroll.branch_id,
+                "days_worked": payroll.days_worked,
+                "amount": payroll.amount,
+                "payroll_type": payroll.payroll_type,
+                "notes": payroll.notes,
+                "review_state": payroll.review_state,
+                "review_observations": payroll.review_observations,
+                "created_at": payroll.created_at,
+                "worker_username": payroll.worker.username if payroll.worker else "Unknown",
+                "branch_name": payroll.branch.name if payroll.branch else "Unknown"
+            }
+            result.append(PayrollWithDetails(**payroll_dict))
+        
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get pending payroll records: {str(e)}"
+        )
+
+
+@router.get(
+    "/review/{review_state}",
+    response_model=List[PayrollWithDetails],
+    summary="Get Payroll Records by Review State",
+    description="Get payroll records filtered by review state. Admin only."
+)
+async def get_payroll_by_review_state_endpoint(
+    *,
+    db: Session = Depends(get_sync_db),
+    review_state: str,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    current_admin: Admin = RequireActiveAdmin
+) -> List[PayrollWithDetails]:
+    """
+    Get payroll records filtered by review state.
+    
+    - **review_state**: pending, approved, or rejected
+    
+    Only admins can view payroll records by review state.
+    """
+    if review_state.lower() not in ['pending', 'approved', 'rejected']:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="review_state must be 'pending', 'approved', or 'rejected'"
+        )
+    
+    try:
+        payroll_records = get_payroll_by_review_state(
+            db=db, 
+            review_state=review_state.lower(), 
+            skip=skip, 
+            limit=limit
+        )
+        
+        # Convert to PayrollWithDetails format
+        result = []
+        for payroll in payroll_records:
+            payroll_dict = {
+                "id": payroll.id,
+                "date": payroll.date,
+                "worker_id": payroll.worker_id,
+                "branch_id": payroll.branch_id,
+                "days_worked": payroll.days_worked,
+                "amount": payroll.amount,
+                "payroll_type": payroll.payroll_type,
+                "notes": payroll.notes,
+                "review_state": payroll.review_state,
+                "review_observations": payroll.review_observations,
+                "created_at": payroll.created_at,
+                "worker_username": payroll.worker.username if payroll.worker else "Unknown",
+                "branch_name": payroll.branch.name if payroll.branch else "Unknown"
+            }
+            result.append(PayrollWithDetails(**payroll_dict))
+        
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get payroll records by review state: {str(e)}"
         )
