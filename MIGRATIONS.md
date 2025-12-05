@@ -13,6 +13,12 @@ Adds `deleted_at` timestamp fields to users and branches tables for soft delete 
 - Preserves historical records for payroll, sales, and expenses
 - Creates indexes on deleted_at for query performance
 
+### 3. add_branch_timestamps
+Adds `created_at` and `updated_at` timestamp fields to branches table.
+- Required for Branch model compatibility
+- Includes automatic trigger to update updated_at on record changes
+- Run this if you get "column branches.created_at does not exist" errors
+
 ## Running Migrations in Production (Railway)
 
 ### Option 1: Using Migration Runner (Recommended)
@@ -23,6 +29,7 @@ railway ssh
 # Run specific migration using the runner script
 python run_migration.py add_review_fields
 python run_migration.py add_soft_delete
+python run_migration.py add_branch_timestamps
 ```
 
 ### Option 2: Manual Migration
@@ -33,6 +40,7 @@ railway ssh
 # Set Python path and run migration
 PYTHONPATH=/app python migrations/add_review_fields.py
 PYTHONPATH=/app python migrations/add_soft_delete.py
+PYTHONPATH=/app python migrations/add_branch_timestamps.py
 ```
 
 ## Creating New Migrations
