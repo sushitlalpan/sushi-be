@@ -293,6 +293,18 @@ async def import_sales_from_excel(
             kiwi_fee_total = safe_float(row.get('TOTAL COMISIÓN KIWI', 0))
             notes = safe_str(row.get('NOTAS', ''))
             
+            # Validate numeric fields for negative values
+            if card_itpv < 0:
+                errors.append("TARJETA SEGÚN ITPV cannot be negative")
+            if card_refund < 0:
+                errors.append("DEVOLUCIÓN EN TARJETA cannot be negative")
+            if cash_amt < 0:
+                errors.append("EFECTIVO cannot be negative")
+            if cash_refund < 0:
+                errors.append("DEVOLUCIÓN EN EFECTIVO cannot be negative")
+            if kiwi_fee_total < 0:
+                errors.append("TOTAL COMISIÓN KIWI cannot be negative")
+            
             # Parse FECHA_REGISTRO if available (otherwise use current time)
             fecha_registro = parse_datetime(row.get('FECHA_REGISTRO'))
             
