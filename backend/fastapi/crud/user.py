@@ -277,10 +277,10 @@ def get_user(db: Session, user_id: UUID) -> Optional[User]:
 def get_users(db: Session, skip: int = 0, limit: int = 100, 
               branch: Optional[str] = None, 
               include_inactive: bool = False) -> List[User]:
-    """Get list of users with branch names loaded."""
+    """Get list of users with branch names loaded (excludes soft-deleted users)."""
     from sqlalchemy.orm import joinedload
     
-    query = db.query(User).options(joinedload(User.branch))
+    query = db.query(User).options(joinedload(User.branch)).filter(User.deleted_at.is_(None))
     
     # Filter by active status
     if not include_inactive:

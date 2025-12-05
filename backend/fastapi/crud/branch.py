@@ -268,7 +268,7 @@ def get_branches_with_stats(db: Session, skip: int = 0, limit: int = 100) -> Lis
 
 def search_branches(db: Session, query: str, skip: int = 0, limit: int = 100) -> List[Branch]:
     """
-    Search branches by name.
+    Search branches by name (excludes soft-deleted branches).
     
     Args:
         db: Database session
@@ -281,7 +281,10 @@ def search_branches(db: Session, query: str, skip: int = 0, limit: int = 100) ->
     """
     return (
         db.query(Branch)
-        .filter(Branch.name.ilike(f"%{query}%"))
+        .filter(
+            Branch.name.ilike(f"%{query}%"),
+            Branch.deleted_at.is_(None)
+        )
         .offset(skip)
         .limit(limit)
         .all()
