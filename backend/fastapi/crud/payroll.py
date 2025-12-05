@@ -34,7 +34,10 @@ def create_payroll(db: Session, payroll_data: PayrollCreate) -> Payroll:
         HTTPException: If worker or branch doesn't exist
     """
     # Validate worker exists
-    worker = db.query(User).filter(User.id == payroll_data.worker_id).first()
+    worker = db.query(User).filter(
+        User.id == payroll_data.worker_id,
+        User.deleted_at.is_(None)
+    ).first()
     if not worker:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -42,7 +45,10 @@ def create_payroll(db: Session, payroll_data: PayrollCreate) -> Payroll:
         )
     
     # Validate branch exists
-    branch = db.query(Branch).filter(Branch.id == payroll_data.branch_id).first()
+    branch = db.query(Branch).filter(
+        Branch.id == payroll_data.branch_id,
+        Branch.deleted_at.is_(None)
+    ).first()
     if not branch:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -217,7 +223,10 @@ def update_payroll(db: Session, payroll_id: UUID, payroll_update: PayrollUpdate)
     
     # Validate worker if being updated
     if payroll_update.worker_id:
-        worker = db.query(User).filter(User.id == payroll_update.worker_id).first()
+        worker = db.query(User).filter(
+            User.id == payroll_update.worker_id,
+            User.deleted_at.is_(None)
+        ).first()
         if not worker:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -226,7 +235,10 @@ def update_payroll(db: Session, payroll_id: UUID, payroll_update: PayrollUpdate)
     
     # Validate branch if being updated
     if payroll_update.branch_id:
-        branch = db.query(Branch).filter(Branch.id == payroll_update.branch_id).first()
+        branch = db.query(Branch).filter(
+            Branch.id == payroll_update.branch_id,
+            Branch.deleted_at.is_(None)
+        ).first()
         if not branch:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -417,7 +429,10 @@ def get_worker_payroll_summary(
         Dictionary with payroll summary or None if worker not found
     """
     # Check if worker exists
-    worker = db.query(User).filter(User.id == worker_id).first()
+    worker = db.query(User).filter(
+        User.id == worker_id,
+        User.deleted_at.is_(None)
+    ).first()
     if not worker:
         return None
     

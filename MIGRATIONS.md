@@ -1,5 +1,18 @@
 # Database Migrations
 
+## Available Migrations
+
+### 1. add_review_fields
+Adds `review_state` and `review_observations` fields to expense, payroll, and sales tables.
+- Default review_state: 'pending'
+- Supports review states: pending, approved, rejected
+
+### 2. add_soft_delete
+Adds `deleted_at` timestamp fields to users and branches tables for soft delete support.
+- Prevents data loss from user/branch deletions
+- Preserves historical records for payroll, sales, and expenses
+- Creates indexes on deleted_at for query performance
+
 ## Running Migrations in Production (Railway)
 
 ### Option 1: Using Migration Runner (Recommended)
@@ -7,8 +20,9 @@
 # Connect to Railway
 railway ssh
 
-# Run migration using the runner script
+# Run specific migration using the runner script
 python run_migration.py add_review_fields
+python run_migration.py add_soft_delete
 ```
 
 ### Option 2: Manual Migration
@@ -18,6 +32,7 @@ railway ssh
 
 # Set Python path and run migration
 PYTHONPATH=/app python migrations/add_review_fields.py
+PYTHONPATH=/app python migrations/add_soft_delete.py
 ```
 
 ## Creating New Migrations

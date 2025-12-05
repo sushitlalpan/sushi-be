@@ -196,43 +196,52 @@ async def update_branch_by_id(
         )
 
 
-@router.delete("/{branch_id}", summary="Delete Branch")
+@router.delete("/{branch_id}", summary="Soft Delete Branch")
 async def delete_branch_by_id(
     branch_id: UUID,
     db: Session = Depends(get_sync_db),
     current_admin: Admin = RequireActiveAdmin
 ):
     """
-    Delete branch (admin-only endpoint).
+    Soft delete branch by setting deleted_at timestamp (admin-only endpoint).
+    
+    This performs a soft delete which preserves the branch record and all associated
+    data (payroll, sales, expenses) for historical purposes while marking the branch
+    as deleted.
     
     **Permissions:** Requires active admin authentication
     
-    **Security Notes:**
-    - Cannot delete branches with assigned users
-    - Cannot delete branches with payroll records
-    - Consider archiving instead of deleting
+    **Validation:**
+    - Cannot soft delete branches with active (non-deleted) users
+    - Ensures data integrity by requiring users to be deleted or reassigned first
+    
+    **Important Notes:**
+    - This is a SOFT DELETE - the branch record is preserved with deleted_at timestamp
+    - All associated records (payroll, sales, expenses) are preserved
+    - Soft-deleted branches cannot be selected for new records
+    - Branch name becomes available for reuse after soft deletion
     
     **Parameters:**
-    - **branch_id**: UUID of branch to delete
+    - **branch_id**: UUID of branch to soft delete
     
     **Returns:**
-    - Success message with deleted branch ID
+    - Success message with soft deleted branch ID
     
     **Errors:**
     - **401**: Not authenticated or not admin
     - **403**: Admin account deactivated
-    - **404**: Branch not found
-    - **409**: Branch has associated users or payroll records
+    - **404**: Branch not found or already deleted
+    - **409**: Branch has active users (must be deleted or reassigned first)
     """
     try:
         success = delete_branch(db, branch_id)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Branch not found"
+                detail="Branch not found or already deleted"
             )
         
-        return {"message": "Branch deleted successfully", "branch_id": str(branch_id)}
+        return {"message": "Branch soft deleted successfully", "branch_id": str(branch_id)}
     except HTTPException:
         raise
     except Exception as e:

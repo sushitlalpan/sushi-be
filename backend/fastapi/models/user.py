@@ -123,6 +123,14 @@ class User(Base):
         doc="Last account update timestamp"
     )
     
+    deleted_at = Column(
+        DateTime,
+        nullable=True,
+        default=None,
+        index=True,
+        doc="Soft delete timestamp (NULL if not deleted)"
+    )
+    
     # Relationships
     branch = relationship("Branch", back_populates="users", doc="Branch where this user works")
     time_entries = relationship("TimeEntry", back_populates="user", cascade="all, delete-orphan")

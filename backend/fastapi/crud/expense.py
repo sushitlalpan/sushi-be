@@ -34,7 +34,10 @@ def create_expense(db: Session, expense_data: ExpenseCreate) -> Expense:
         HTTPException: If worker or branch doesn't exist
     """
     # Validate worker exists
-    worker = db.query(User).filter(User.id == expense_data.worker_id).first()
+    worker = db.query(User).filter(
+        User.id == expense_data.worker_id,
+        User.deleted_at.is_(None)
+    ).first()
     if not worker:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -42,7 +45,10 @@ def create_expense(db: Session, expense_data: ExpenseCreate) -> Expense:
         )
     
     # Validate branch exists
-    branch = db.query(Branch).filter(Branch.id == expense_data.branch_id).first()
+    branch = db.query(Branch).filter(
+        Branch.id == expense_data.branch_id,
+        Branch.deleted_at.is_(None)
+    ).first()
     if not branch:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -299,7 +305,10 @@ def update_expense(db: Session, expense_id: UUID, expense_update: ExpenseUpdate)
     
     # Validate worker if being updated
     if expense_update.worker_id:
-        worker = db.query(User).filter(User.id == expense_update.worker_id).first()
+        worker = db.query(User).filter(
+            User.id == expense_update.worker_id,
+            User.deleted_at.is_(None)
+        ).first()
         if not worker:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -308,7 +317,10 @@ def update_expense(db: Session, expense_id: UUID, expense_update: ExpenseUpdate)
     
     # Validate branch if being updated
     if expense_update.branch_id:
-        branch = db.query(Branch).filter(Branch.id == expense_update.branch_id).first()
+        branch = db.query(Branch).filter(
+            Branch.id == expense_update.branch_id,
+            Branch.deleted_at.is_(None)
+        ).first()
         if not branch:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

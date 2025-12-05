@@ -37,6 +37,14 @@ class UserBase(BaseModel):
         examples=["+1-555-0123", "555-123-4567", "(555) 123-4567"]
     )
     
+    @field_validator('phone_number', mode='before')
+    @classmethod
+    def empty_string_to_none(cls, v):
+        """Convert empty string to None for optional phone number field."""
+        if v == '' or (isinstance(v, str) and not v.strip()):
+            return None
+        return v
+    
     fingerprint_id: Optional[str] = Field(
         None,
         max_length=255,
@@ -103,6 +111,14 @@ class UserUpdate(BaseModel):
         pattern=r"^[+]?[0-9\s\-\(\)]+$",
         description="New phone number (optional)"
     )
+    
+    @field_validator('phone_number', mode='before')
+    @classmethod
+    def empty_string_to_none(cls, v):
+        """Convert empty string to None for optional phone number field."""
+        if v == '' or (isinstance(v, str) and not v.strip()):
+            return None
+        return v
     
     fingerprint_id: Optional[str] = Field(
         None,

@@ -34,7 +34,10 @@ def create_sales(db: Session, sales_data: SalesCreate) -> Sales:
         HTTPException: If worker or branch doesn't exist, or duplicate closure number
     """
     # Validate worker exists
-    worker = db.query(User).filter(User.id == sales_data.worker_id).first()
+    worker = db.query(User).filter(
+        User.id == sales_data.worker_id,
+        User.deleted_at.is_(None)
+    ).first()
     if not worker:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -42,7 +45,10 @@ def create_sales(db: Session, sales_data: SalesCreate) -> Sales:
         )
     
     # Validate branch exists
-    branch = db.query(Branch).filter(Branch.id == sales_data.branch_id).first()
+    branch = db.query(Branch).filter(
+        Branch.id == sales_data.branch_id,
+        Branch.deleted_at.is_(None)
+    ).first()
     if not branch:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -259,7 +265,10 @@ def update_sales(db: Session, sales_id: UUID, sales_update: SalesUpdate) -> Opti
     
     # Validate worker if being updated
     if sales_update.worker_id:
-        worker = db.query(User).filter(User.id == sales_update.worker_id).first()
+        worker = db.query(User).filter(
+            User.id == sales_update.worker_id,
+            User.deleted_at.is_(None)
+        ).first()
         if not worker:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -268,7 +277,10 @@ def update_sales(db: Session, sales_id: UUID, sales_update: SalesUpdate) -> Opti
     
     # Validate branch if being updated
     if sales_update.branch_id:
-        branch = db.query(Branch).filter(Branch.id == sales_update.branch_id).first()
+        branch = db.query(Branch).filter(
+            Branch.id == sales_update.branch_id,
+            Branch.deleted_at.is_(None)
+        ).first()
         if not branch:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

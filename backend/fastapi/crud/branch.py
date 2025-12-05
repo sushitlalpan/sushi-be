@@ -7,6 +7,7 @@ for Branch model management.
 
 from uuid import UUID
 from typing import List, Optional
+from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from fastapi import HTTPException, status
@@ -53,35 +54,41 @@ def create_branch(db: Session, branch_data: BranchCreate) -> Branch:
 
 def get_branch(db: Session, branch_id: UUID) -> Optional[Branch]:
     """
-    Get a branch by ID.
+    Get a branch by ID (excludes soft-deleted branches).
     
     Args:
         db: Database session
         branch_id: Branch unique identifier
         
     Returns:
-        Branch instance if found, None otherwise
+        Branch instance if found and not deleted, None otherwise
     """
-    return db.query(Branch).filter(Branch.id == branch_id).first()
+    return db.query(Branch).filter(
+        Branch.id == branch_id,
+        Branch.deleted_at.is_(None)
+    ).first()
 
 
 def get_branch_by_name(db: Session, name: str) -> Optional[Branch]:
     """
-    Get a branch by name.
+    Get a branch by name (excludes soft-deleted branches).
     
     Args:
         db: Database session
         name: Branch name
         
     Returns:
-        Branch instance if found, None otherwise
+        Branch instance if found and not deleted, None otherwise
     """
-    return db.query(Branch).filter(Branch.name == name).first()
+    return db.query(Branch).filter(
+        Branch.name == name,
+        Branch.deleted_at.is_(None)
+    ).first()
 
 
 def get_branches(db: Session, skip: int = 0, limit: int = 100) -> List[Branch]:
     """
-    Get a list of branches with pagination.
+    Get a list of branches with pagination (excludes soft-deleted branches).
     
     Args:
         db: Database session
@@ -89,22 +96,26 @@ def get_branches(db: Session, skip: int = 0, limit: int = 100) -> List[Branch]:
         limit: Maximum number of records to return
         
     Returns:
-        List of branch instances
+        List of branch instances (excluding soft-deleted)
     """
-    return db.query(Branch).offset(skip).limit(limit).all()
+    return db.query(Branch).filter(
+        Branch.deleted_at.is_(None)
+    ).offset(skip).limit(limit).all()
 
 
 def get_branches_count(db: Session) -> int:
     """
-    Get total count of branches.
+    Get total count of branches (excludes soft-deleted branches).
     
     Args:
         db: Database session
         
     Returns:
-        Total number of branches
+        Total number of non-deleted branches
     """
-    return db.query(Branch).count()
+    return db.query(Branch).filter(
+        Branch.deleted_at.is_(None)
+    ).count()
 
 
 def update_branch(db: Session, branch_id: UUID, branch_update: BranchUpdate) -> Optional[Branch]:
@@ -149,43 +160,37 @@ def update_branch(db: Session, branch_id: UUID, branch_update: BranchUpdate) -> 
 
 def delete_branch(db: Session, branch_id: UUID) -> bool:
     """
-    Delete a branch.
+    Soft delete a branch (sets deleted_at timestamp).
     
     Args:
         db: Database session
         branch_id: Branch unique identifier
         
     Returns:
-        True if branch was deleted, False if not found
+        True if branch was soft deleted, False if not found
         
     Raises:
-        HTTPException: If branch has associated users or payroll records
+        HTTPException: If branch has associated non-deleted users
     """
     # Get existing branch
     db_branch = get_branch(db, branch_id)
     if not db_branch:
         return False
     
-    # Check if branch has users
-    user_count = db.query(User).filter(User.branch_id == branch_id).count()
+    # Check if branch has non-deleted users
+    user_count = db.query(User).filter(
+        User.branch_id == branch_id,
+        User.deleted_at.is_(None)
+    ).count()
     if user_count > 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot delete branch with {user_count} assigned users. "
-                   "Please reassign users to another branch first."
+            detail=f"Cannot delete branch with {user_count} active users. "
+                   "Please reassign or delete users first."
         )
     
-    # Check if branch has payroll records
-    payroll_count = db.query(Payroll).filter(Payroll.branch_id == branch_id).count()
-    if payroll_count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot delete branch with {payroll_count} payroll records. "
-                   "Consider archiving the branch instead."
-        )
-    
-    # Delete branch
-    db.delete(db_branch)
+    # Soft delete branch: set deleted_at timestamp
+    db_branch.deleted_at = datetime.utcnow()
     db.commit()
     
     return True
@@ -208,7 +213,10 @@ def get_branch_with_stats(db: Session, branch_id: UUID) -> Optional[dict]:
         return None
     
     # Get statistics
-    user_count = db.query(User).filter(User.branch_id == branch_id).count()
+    user_count = db.query(User).filter(
+        User.branch_id == branch_id,
+        User.deleted_at.is_(None)
+    ).count()
     payroll_count = db.query(Payroll).filter(Payroll.branch_id == branch_id).count()
     
     return {

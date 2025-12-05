@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from backend.fastapi.api.v1.endpoints import base, doc, message, admin, user, time_entry, branch, payroll, sales, expense, general
+from backend.fastapi.api.v1.endpoints import base, doc, message, admin, user, time_entry, branch, payroll, sales, expense, general, excel_import
 
 def setup_routers(app: FastAPI):
     # Main and documentation routes
@@ -35,3 +35,6 @@ def setup_routers(app: FastAPI):
     
     # General combined data routes
     app.include_router(general.router, prefix="/api/v1/general", tags=["general-data"])
+    
+    # Excel import routes
+    app.include_router(excel_import.router, prefix="/api/v1", tags=["excel-import"])

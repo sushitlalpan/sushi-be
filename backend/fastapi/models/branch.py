@@ -7,7 +7,8 @@ with specific branches.
 """
 
 from uuid import uuid4
-from sqlalchemy import Column, String
+from datetime import datetime
+from sqlalchemy import Column, String, DateTime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from backend.fastapi.dependencies.database import Base
@@ -45,6 +46,30 @@ class Branch(Base):
         nullable=False,
         index=True,
         doc="Name of the branch/location (e.g., 'Downtown Store', 'Mall Location')"
+    )
+    
+    # Timestamps
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+        doc="Branch creation timestamp"
+    )
+    
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+        doc="Last branch update timestamp"
+    )
+    
+    deleted_at = Column(
+        DateTime,
+        nullable=True,
+        default=None,
+        index=True,
+        doc="Soft delete timestamp (NULL if not deleted)"
     )
     
     # Relationships

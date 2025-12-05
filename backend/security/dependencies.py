@@ -211,7 +211,10 @@ async def get_current_user(
     # Get user from database with branch loaded
     from sqlalchemy.orm import joinedload
     from backend.fastapi.models.user import User
-    user = db.query(User).options(joinedload(User.branch)).filter(User.id == user_id).first()
+    user = db.query(User).options(joinedload(User.branch)).filter(
+        User.id == user_id,
+        User.deleted_at.is_(None)
+    ).first()
     if user is None:
         raise credentials_exception
     
@@ -294,7 +297,10 @@ async def get_current_admin_or_user(
     elif user_role == "user":
         from sqlalchemy.orm import joinedload
         from backend.fastapi.models.user import User
-        user = db.query(User).options(joinedload(User.branch)).filter(User.id == user_id).first()
+        user = db.query(User).options(joinedload(User.branch)).filter(
+            User.id == user_id,
+            User.deleted_at.is_(None)
+        ).first()
         if user is None or not user.is_active:
             raise credentials_exception
         return user, "user"

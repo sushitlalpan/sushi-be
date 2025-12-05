@@ -25,6 +25,7 @@ from backend.security.password import verify_password
 from backend.security.auth import create_user_token
 from backend.security.dependencies import RequireAdmin, RequireActiveAdmin, RequireActiveUser, get_current_admin_or_user
 from backend.fastapi.core.init_settings import global_settings
+from backend.fastapi.core.utils import normalize_username
 
 
 router = APIRouter(tags=["user-authentication"])
@@ -39,14 +40,20 @@ async def user_login(
     """
     Authenticate staff user and return JWT access token.
     
+    **Username Normalization:**
+    Usernames are automatically normalized during login:
+    - Accents removed: José → jose
+    - Spaces removed: "Mike Storage" → "mikestorage"
+    - Converted to lowercase
+    
     **Process:**
-    1. Validate username and password
+    1. Normalize and validate username and password
     2. Check if user account is active
     3. Generate JWT access token with user role
     4. Return token with user information
     
     **Parameters:**
-    - **username**: Staff username
+    - **username**: Staff username (will be normalized for lookup)
     - **password**: Staff password (plain text, will be hashed)
     
     **Returns:**
@@ -58,8 +65,11 @@ async def user_login(
     **Errors:**
     - **401**: Invalid credentials or inactive account
     """
-    # Get user by username
-    user = get_user_by_username(db, user_login.username)
+    # Normalize username for lookup (remove accents, spaces, lowercase)
+    normalized_username = normalize_username(user_login.username)
+    
+    # Get user by normalized username
+    user = get_user_by_username(db, normalized_username)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -114,17 +124,23 @@ async def register_user(
     """
     Register a new staff user (admin-only endpoint).
     
+    **Username Normalization:**
+    Usernames are automatically normalized:
+    - Accents removed: José → jose, María → maria, Peña → pena
+    - Spaces removed: "Mike Storage" → "mikestorage"
+    - Converted to lowercase: "JOSE" → "jose"
+    
     **Permissions:** Requires active admin authentication
     
     **Process:**
-    1. Validate user data
-    2. Check username uniqueness
+    1. Normalize and validate user data
+    2. Check username uniqueness (normalized)
     3. Hash password securely
     4. Create user account
     5. Return user information
     
     **Parameters:**
-    - **username**: Unique staff username (3-50 chars)
+    - **username**: Staff username (will be normalized - 3-50 chars)
     - **password**: Staff password (8+ chars)
     - **branch_id**: Restaurant branch UUID (from branches table)
     - **phone_number**: Phone number (optional)
@@ -132,12 +148,12 @@ async def register_user(
     - **is_active**: Whether account is active (default: true)
     
     **Returns:**
-    - Staff user information (without password)
+    - Staff user information (with normalized username, without password)
     
     **Errors:**
     - **401**: Not authenticated or not admin
     - **403**: Admin account deactivated  
-    - **409**: Username already exists
+    - **409**: Username already exists (after normalization)
     - **422**: Validation errors (username/password format)
     """
     try:
@@ -381,41 +397,47 @@ async def update_user_by_id(
         )
 
 
-@user_router.delete("/{user_id}", summary="Delete User")
+@user_router.delete("/{user_id}", summary="Soft Delete User")
 async def delete_user_by_id(
     user_id: UUID,
     db: Session = Depends(get_sync_db),
     current_admin: Admin = RequireActiveAdmin
 ):
     """
-    Delete staff user (admin-only endpoint).
+    Soft delete staff user by setting deleted_at timestamp (admin-only endpoint).
+    
+    This performs a soft delete which preserves the user record and all associated
+    data (payroll, sales, expenses, time entries) for historical purposes while
+    marking the user as deleted.
     
     **Permissions:** Requires active admin authentication
     
-    **Security Notes:**
-    - Consider soft deletion for audit trails
-    - Ensure user is clocked out before deletion
+    **Important Notes:**
+    - This is a SOFT DELETE - the user record is preserved with deleted_at timestamp
+    - All associated records (payroll, sales, expenses) are preserved
+    - Soft-deleted users cannot log in or appear in active user lists
+    - Username becomes available for reuse after soft deletion
     
     **Parameters:**
-    - **user_id**: UUID of user to delete
+    - **user_id**: UUID of user to soft delete
     
     **Returns:**
-    - Success message with deleted user ID
+    - Success message with soft deleted user ID
     
     **Errors:**
     - **401**: Not authenticated or not admin
     - **403**: Admin account deactivated
-    - **404**: User not found
+    - **404**: User not found or already deleted
     """
     # Check if user exists
     user = get_user(db, user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            detail="User not found or already deleted"
         )
     
-    # Delete user
+    # Soft delete user
     success = delete_user(db, user_id)
     if not success:
         raise HTTPException(
@@ -423,7 +445,7 @@ async def delete_user_by_id(
             detail="Failed to delete user"
         )
     
-    return {"message": "User deleted successfully", "user_id": str(user_id)}
+    return {"message": "User soft deleted successfully", "user_id": str(user_id)}
 
 
 # Test endpoint for staff authentication

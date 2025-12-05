@@ -17,6 +17,7 @@ from backend.fastapi.models.user import User
 from backend.fastapi.models.branch import Branch
 from backend.fastapi.schemas.user import UserCreate, UserUpdate
 from backend.security.password import hash_password
+from backend.fastapi.core.utils import normalize_username
 
 
 class UserCRUD:
@@ -30,6 +31,11 @@ class UserCRUD:
         """
         Create a new staff user.
         
+        Username is automatically normalized:
+        - Accents removed (é -> e, ñ -> n)
+        - Spaces removed
+        - Converted to lowercase
+        
         Args:
             user_data: User creation data with username, password, branch, etc.
             
@@ -39,20 +45,23 @@ class UserCRUD:
         Raises:
             HTTPException: If username already exists
         """
-        # Check if username already exists
-        existing_user = self.get_user_by_username(user_data.username)
+        # Normalize username (remove accents, spaces, lowercase)
+        normalized_username = normalize_username(user_data.username)
+        
+        # Check if normalized username already exists
+        existing_user = self.get_user_by_username(normalized_username)
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already registered"
+                detail=f"Username already registered (normalized to '{normalized_username}')"
             )
         
         # Hash the password
         hashed_password = hash_password(user_data.password)
         
-        # Create user instance
+        # Create user instance with normalized username
         db_user = User(
-            username=user_data.username,
+            username=normalized_username,
             password_hash=hashed_password,
             branch_id=user_data.branch_id,
             phone_number=user_data.phone_number,
@@ -69,39 +78,48 @@ class UserCRUD:
     
     def get_user(self, user_id: UUID) -> Optional[User]:
         """
-        Get user by ID.
+        Get user by ID (excludes soft-deleted users).
         
         Args:
             user_id: User UUID
             
         Returns:
-            User instance or None if not found
+            User instance or None if not found or deleted
         """
-        return self.db.query(User).filter(User.id == user_id).first()
+        return self.db.query(User).filter(
+            User.id == user_id,
+            User.deleted_at.is_(None)
+        ).first()
     
     def get_user_by_username(self, username: str) -> Optional[User]:
         """
-        Get user by username.
+        Get user by username (excludes soft-deleted users).
         
         Args:
             username: User username
             
         Returns:
-            User instance or None if not found
+            User instance or None if not found or deleted
         """
-        return self.db.query(User).filter(User.username == username).first()
+        return self.db.query(User).filter(
+            User.username == username,
+            User.deleted_at.is_(None)
+        ).first()
     
     def get_user_by_fingerprint(self, fingerprint_id: str) -> Optional[User]:
         """
-        Get user by fingerprint ID.
+        Get user by fingerprint ID (excludes soft-deleted users).
         
         Args:
             fingerprint_id: Fingerprint identifier
             
         Returns:
-            User instance or None if not found
+            User instance or None if not found or deleted
         """
-        return self.db.query(User).filter(User.fingerprint_id == fingerprint_id).first()
+        return self.db.query(User).filter(
+            User.fingerprint_id == fingerprint_id,
+            User.deleted_at.is_(None)
+        ).first()
     
     def get_users(self, skip: int = 0, limit: int = 100, 
                   branch: Optional[str] = None, 
@@ -118,7 +136,7 @@ class UserCRUD:
         Returns:
             List of User instances
         """
-        query = self.db.query(User)
+        query = self.db.query(User).filter(User.deleted_at.is_(None))
         
         # Filter by active status
         if not include_inactive:
@@ -182,7 +200,7 @@ class UserCRUD:
     
     def delete_user(self, user_id: UUID) -> bool:
         """
-        Delete user by ID.
+        Soft delete user by ID (sets deleted_at timestamp).
         
         Args:
             user_id: User UUID to delete
@@ -194,7 +212,8 @@ class UserCRUD:
         if not db_user:
             return False
         
-        self.db.delete(db_user)
+        # Soft delete: set deleted_at timestamp
+        db_user.deleted_at = datetime.utcnow()
         self.db.commit()
         return True
     
