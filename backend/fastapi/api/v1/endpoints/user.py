@@ -313,7 +313,10 @@ async def get_user_by_id(
     - **422**: Invalid UUID format
     """
     from sqlalchemy.orm import joinedload
-    user = db.query(User).options(joinedload(User.branch)).filter(User.id == user_id).first()
+    user = db.query(User).options(joinedload(User.branch)).filter(
+        User.id == user_id,
+        User.deleted_at.is_(None)
+    ).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
