@@ -7,7 +7,7 @@ Supports importing Sales (Ventas), Expenses (Egresos), and Payroll (Nomina) reco
 
 from typing import List, Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 import io
 
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, status
