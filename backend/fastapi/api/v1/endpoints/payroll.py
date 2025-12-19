@@ -27,7 +27,7 @@ from backend.fastapi.crud.payroll import (
     get_payroll_pending_review, get_payroll_by_review_state,
     update_payroll_review_status
 )
-from backend.security.dependencies import RequireActiveAdmin, RequireActiveUser
+from backend.security.dependencies import RequireActiveAdmin, RequireActiveUser, get_current_admin_or_user
 
 
 router = APIRouter(tags=["payroll-management"])
@@ -37,12 +37,12 @@ router = APIRouter(tags=["payroll-management"])
 async def create_payroll_record(
     payroll_data: PayrollCreate,
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_user: Admin | User = Depends(get_current_admin_or_user)
 ):
     """
-    Create a new payroll record (admin-only endpoint).
+    Create a new payroll record (accessible to admins and users).
     
-    **Permissions:** Requires active admin authentication
+    **Permissions:** Requires active admin or user authentication
     
     **Parameters:**
     - **date**: Date of the payroll entry/payment

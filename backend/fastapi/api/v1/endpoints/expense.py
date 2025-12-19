@@ -49,20 +49,12 @@ async def create_expense_record(
     """
     Create a new expense record.
     
-    - **Admins** can create expenses for any worker
-    - **Users** can only create expenses for themselves
+    - **Admins and users** can create expenses for any worker
     - Validates worker and branch existence
     - Automatically calculates unit cost based on total amount and quantity
     
     Returns the created expense record with calculated fields.
     """
-    # Check if user is creating expense for themselves or if admin
-    if isinstance(current_user, User) and expense_in.worker_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only create expenses for yourself"
-        )
-    
     try:
         expense_record = expense_crud.create_expense(db=db, expense_data=expense_in)
         return expense_record

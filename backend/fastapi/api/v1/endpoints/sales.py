@@ -44,12 +44,12 @@ async def create_sales_record(
     *,
     db: Session = Depends(get_sync_db),
     sales_in: SalesCreate,
-    current_user: Admin = Depends(get_current_admin)
+    current_user: Admin | User = Depends(get_current_admin_or_user)
 ) -> SalesRead:
     """
     Create a new sales record.
     
-    - **Only admins** can create sales records
+    - **Admins and users** can create sales records
     - Validates worker and branch existence
     - Prevents duplicate closure numbers for same date/branch
     - Automatically calculates totals and discrepancies
