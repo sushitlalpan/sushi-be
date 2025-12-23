@@ -103,6 +103,7 @@ async def user_login(
         user=UserRead(
             id=user.id,
             username=user.username,
+            branch_id=user.branch_id,
             branch_name=user.branch.name if user.branch else "Unknown Branch",
             phone_number=user.phone_number,
             fingerprint_id=user.fingerprint_id,
@@ -274,6 +275,7 @@ async def list_users(
         UserRead(
             id=user.id,
             username=user.username,
+            branch_id=user.branch_id,
             branch_name=user.branch.name if user.branch else "Unknown Branch",
             phone_number=user.phone_number,
             fingerprint_id=user.fingerprint_id,
@@ -325,6 +327,7 @@ async def get_user_by_id(
     return UserRead(
         id=user.id,
         username=user.username,
+        branch_id=user.branch_id,
         branch_name=user.branch.name if user.branch else "Unknown Branch",
         phone_number=user.phone_number,
         fingerprint_id=user.fingerprint_id,
@@ -382,6 +385,7 @@ async def update_user_by_id(
         return UserRead(
             id=user_with_branch.id,
             username=user_with_branch.username,
+            branch_id=user_with_branch.branch_id,
             branch_name=user_with_branch.branch.name if user_with_branch.branch else "Unknown Branch",
             phone_number=user_with_branch.phone_number,
             fingerprint_id=user_with_branch.fingerprint_id,

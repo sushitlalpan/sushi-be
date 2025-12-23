@@ -147,6 +147,7 @@ class UserRead(BaseModel):
     
     id: UUID = Field(..., description="User unique identifier")
     username: str = Field(..., description="Username")
+    branch_id: UUID = Field(..., description="Branch ID where user works")
     branch_name: str = Field(..., description="Branch name where user works")
     phone_number: Optional[str] = Field(None, description="Phone number")
     fingerprint_id: Optional[str] = Field(None, description="Fingerprint ID")
