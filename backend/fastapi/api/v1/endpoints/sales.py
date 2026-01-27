@@ -107,6 +107,9 @@ async def list_sales_records(
     current_user: Admin | User = Depends(get_current_admin_or_user),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    branch_id: Optional[UUID] = Query(None, description="Filter by branch ID"),
+    start_date: Optional[date] = Query(None, description="Filter from this date"),
+    end_date: Optional[date] = Query(None, description="Filter until this date"),
     order_by: str = Query(
         "date_desc",
         regex="^(date_desc|date_asc|sales_desc|sales_asc|discrepancy_desc)$",
@@ -120,6 +123,7 @@ async def list_sales_records(
     - **Users** see only their own sales records
     - Supports pagination with skip/limit
     - Supports multiple sorting options
+    - Supports filtering by branch, start date, and end date
     
     Returns paginated list with metadata.
     """
@@ -134,6 +138,9 @@ async def list_sales_records(
         skip=skip,
         limit=limit,
         worker_id=worker_id,
+        branch_id=branch_id,
+        start_date=start_date,
+        end_date=end_date,
         order_by=order_by
     )
     
@@ -173,7 +180,10 @@ async def list_sales_records(
     # Get total count for pagination
     total_count = sales_crud.get_sales_count(
         db=db,
-        worker_id=worker_id
+        worker_id=worker_id,
+        branch_id=branch_id,
+        start_date=start_date,
+        end_date=end_date
     )
     
     return SalesListResponse(
