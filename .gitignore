@@ -155,7 +155,7 @@ dmypy.json
 [Ll]ib
 [Ll]ib64
 [Ll]ocal
-[Ss]cripts
+# [Ss]cripts - commented out to allow /scripts folder for project scripts
 pyvenv.cfg
 .venv
 pip-selfcheck.json

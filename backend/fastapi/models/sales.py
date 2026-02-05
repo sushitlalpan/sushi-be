@@ -302,8 +302,8 @@ class Sales(Base):
         Calculate derived fields based on input values.
         This should be called before saving to ensure consistency.
         """
-        # Calculate card total
-        self.card_total = self.card_itpv + self.card_kiwi + self.transfer_amt - self.card_refund
+        # Calculate card total (excludes card_itpv which is tracked separately)
+        self.card_total = self.card_kiwi + self.transfer_amt - self.card_refund
         
         # Calculate cash total
         self.cash_total = self.cash_amt - self.cash_refund
