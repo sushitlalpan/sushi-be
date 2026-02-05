@@ -14,31 +14,31 @@ import os
 from decimal import Decimal
 from datetime import datetime
 
+# Check for dry-run flag BEFORE any imports that use argparse
+dry_run = "--dry-run" in sys.argv
+# Remove it from sys.argv to avoid conflicts with other argparse usage
+if dry_run:
+    sys.argv.remove("--dry-run")
+
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from backend.fastapi.models.sales import Sales
-from backend.fastapi.core.config import settings
+try:
+    from backend.fastapi.core.config import get_settings
+    settings = get_settings(os.environ.get("ENV_MODE", "dev"))
+    DATABASE_URL = settings.DB_URL
+except (ImportError, AttributeError):
+    # Fallback to environment variable if settings import fails
+    DATABASE_URL = os.environ.get("DATABASE_URL")
+    if not DATABASE_URL:
+        raise RuntimeError(
+            "Could not determine DATABASE_URL. Please set the DATABASE_URL "
+            "environment variable or ensure backend.fastapi.core.config is available."
+        )
 
-
-def calculate_correct_card_total(sale: Sales) -> tuple[Decimal, Decimal]:
-    """
-    Calculate correct card_total and discrepancy.
-    
-    Returns:
-        Tuple of (new_card_total, new_discrepancy)
-    """
-    # Correct formula: excludes card_itpv
-    card_total = sale.card_kiwi + sale.transfer_amt - sale.card_refund
-    
-    # Recalculate discrepancy with correct card_total
-    cash_total = sale.cash_amt - sale.cash_refund
-    payment_total = card_total + cash_total
-    discrepancy = payment_total - sale.sales_total
-    
-    return card_total, discrepancy
+from sqlalchemy import create_engine, text
 
 
 def fix_card_totals(dry_run: bool = False):
@@ -49,13 +49,20 @@ def fix_card_totals(dry_run: bool = False):
         dry_run: If True, only show what would be changed without committing
     """
     # Create database connection
-    engine = create_engine(settings.DATABASE_URL)
-    SessionLocal = sessionmaker(bind=engine)
-    db = SessionLocal()
+    engine = create_engine(DATABASE_URL)
     
-    try:
+    with engine.connect() as connection:
         # Query all sales records
-        sales_records = db.query(Sales).all()
+        result = connection.execute(text("""
+            SELECT id, closure_number, closure_date, worker_id,
+                   card_itpv, card_kiwi, transfer_amt, card_refund,
+                   cash_amt, cash_refund, sales_total,
+                   card_total, discrepancy, review_state
+            FROM sales
+            ORDER BY closure_date
+        """))
+        
+        sales_records = result.fetchall()
         total_records = len(sales_records)
         
         print(f"\n{'='*80}")
@@ -72,10 +79,16 @@ def fix_card_totals(dry_run: bool = False):
         # Process each record
         for i, sale in enumerate(sales_records, 1):
             # Calculate correct values
-            old_card_total = sale.card_total
-            old_discrepancy = sale.discrepancy
+            old_card_total = Decimal(str(sale.card_total))
+            old_discrepancy = Decimal(str(sale.discrepancy))
             
-            new_card_total, new_discrepancy = calculate_correct_card_total(sale)
+            # Correct formula: excludes card_itpv
+            new_card_total = Decimal(str(sale.card_kiwi)) + Decimal(str(sale.transfer_amt)) - Decimal(str(sale.card_refund))
+            
+            # Recalculate discrepancy
+            cash_total = Decimal(str(sale.cash_amt)) - Decimal(str(sale.cash_refund))
+            payment_total = new_card_total + cash_total
+            new_discrepancy = payment_total - Decimal(str(sale.sales_total))
             
             # Check if values changed
             card_total_changed = abs(old_card_total - new_card_total) > Decimal("0.01")
@@ -109,12 +122,20 @@ def fix_card_totals(dry_run: bool = False):
                 
                 # Apply changes if not dry run
                 if not dry_run:
-                    sale.card_total = new_card_total
-                    sale.discrepancy = new_discrepancy
+                    connection.execute(text("""
+                        UPDATE sales
+                        SET card_total = :card_total,
+                            discrepancy = :discrepancy
+                        WHERE id = :id
+                    """), {
+                        "card_total": new_card_total,
+                        "discrepancy": new_discrepancy,
+                        "id": sale.id
+                    })
         
         # Commit changes if not dry run
         if not dry_run and records_with_changes > 0:
-            db.commit()
+            connection.commit()
             print(f"\n✓ Changes committed to database")
         
         # Print summary
@@ -168,19 +189,9 @@ def fix_card_totals(dry_run: bool = False):
         if dry_run:
             print("⚠ DRY RUN MODE - No changes were made to the database")
             print("  Run without --dry-run to apply changes\n")
-        
-    except Exception as e:
-        print(f"\n✗ ERROR: {e}")
-        db.rollback()
-        raise
-    finally:
-        db.close()
 
 
 if __name__ == "__main__":
-    # Check for dry-run flag
-    dry_run = "--dry-run" in sys.argv
-    
     if not dry_run:
         print("\n⚠ WARNING: This will modify database records!")
         print("  Press Ctrl+C to cancel, or Enter to continue...")
