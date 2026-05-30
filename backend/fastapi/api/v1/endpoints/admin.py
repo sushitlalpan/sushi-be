@@ -22,7 +22,7 @@ from backend.fastapi.crud.admin import (
 )
 from backend.security.password import verify_password
 from backend.security.auth import create_admin_token
-from backend.security.dependencies import RequireAdmin, RequireActiveAdmin
+from backend.security.dependencies import RequireAdmin, RequireActiveAdmin, RequireSuperAdmin
 from backend.fastapi.core.init_settings import global_settings
 
 
@@ -81,8 +81,8 @@ async def login(
             detail="Admin account is deactivated",
         )
     
-    # Create access token
-    access_token = create_admin_token(str(admin.id), admin.username)
+    # Create access token with super admin status
+    access_token = create_admin_token(str(admin.id), admin.username, admin.is_super_admin)
     
     return TokenResponse(
         access_token=access_token,
@@ -104,11 +104,13 @@ async def bootstrap_admin(
     
     This endpoint allows creating the first admin user without authentication.
     It will only work if there are no existing admin users in the database.
+    The first admin is automatically created as a super admin.
     
     **Parameters:**
     - **username**: Unique admin username (3-50 chars)
     - **password**: Admin password (8+ chars)
     - **is_active**: Whether account is active (default: true)
+    - **is_super_admin**: Automatically set to true for bootstrap admin
     
     **Returns:**
     - Admin user information (without password)
@@ -123,10 +125,12 @@ async def bootstrap_admin(
     if existing_admins:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Bootstrap not allowed - admin users already exist. Use /register endpoint with admin authentication."
+            detail="Bootstrap not allowed - admin users already exist. Use /register endpoint with super admin authentication."
         )
     
     try:
+        # Force is_super_admin=True for the first admin
+        admin_create.is_super_admin = True
         admin = create_admin(db, admin_create)
         return AdminRead.model_validate(admin)
     except HTTPException:
@@ -142,12 +146,12 @@ async def bootstrap_admin(
 async def register(
     admin_create: AdminCreate,
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_admin: Admin = RequireSuperAdmin
 ):
     """
-    Register a new admin user (admin-only endpoint).
+    Register a new admin user (super admin only endpoint).
     
-    **Permissions:** Requires active admin authentication
+    **Permissions:** Requires super admin authentication
     
     **Process:**
     1. Validate admin data
@@ -263,12 +267,12 @@ async def update_admin_by_id(
     admin_id: UUID,
     admin_update: AdminUpdate,
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_admin: Admin = RequireSuperAdmin
 ):
     """
-    Update admin user information (admin-only endpoint).
+    Update admin user information (super admin only endpoint).
     
-    **Permissions:** Requires active admin authentication
+    **Permissions:** Requires super admin authentication
     
     **Process:**
     1. Validate admin exists
@@ -316,12 +320,12 @@ async def update_admin_by_id(
 async def delete_admin_by_id(
     admin_id: UUID,
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_admin: Admin = RequireSuperAdmin
 ):
     """
-    Delete admin user (admin-only endpoint).
+    Delete admin user (super admin only endpoint).
     
-    **Permissions:** Requires active admin authentication
+    **Permissions:** Requires super admin authentication
     
     **Security Notes:**
     - Admins cannot delete themselves

@@ -38,6 +38,11 @@ class AdminCreate(AdminBase):
         default=True,
         description="Whether the admin account should be active"
     )
+    
+    is_super_admin: bool = Field(
+        default=False,
+        description="Whether the admin has super admin privileges"
+    )
 
 
 class AdminRead(AdminBase):
@@ -45,6 +50,7 @@ class AdminRead(AdminBase):
     
     id: UUID = Field(..., description="Unique identifier for the admin")
     is_active: bool = Field(..., description="Whether the admin account is active")
+    is_super_admin: bool = Field(..., description="Whether the admin has super admin privileges")
     created_at: datetime = Field(..., description="When the admin account was created")
     updated_at: datetime = Field(..., description="When the admin account was last updated")
 
@@ -71,6 +77,11 @@ class AdminUpdate(BaseModel):
     is_active: Optional[bool] = Field(
         None,
         description="Update active status (optional)"
+    )
+    
+    is_super_admin: Optional[bool] = Field(
+        None,
+        description="Update super admin status (optional, super admin only)"
     )
 
 

@@ -103,7 +103,8 @@ def get_payrolls(
     payroll_type: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    order_by: str = "date_desc"
+    order_by: str = "date_desc",
+    exclude_locked: bool = False
 ) -> List[Payroll]:
     """
     Get a list of payroll records with filtering and pagination.
@@ -133,6 +134,9 @@ def get_payrolls(
     
     if branch_id:
         query = query.filter(Payroll.branch_id == branch_id)
+    
+    if exclude_locked:
+        query = query.filter(Payroll.is_locked == False)
     
     if payroll_type:
         query = query.filter(Payroll.payroll_type == payroll_type)
@@ -164,7 +168,8 @@ def get_payrolls_count(
     branch_id: Optional[UUID] = None,
     payroll_type: Optional[str] = None,
     start_date: Optional[date] = None,
-    end_date: Optional[date] = None
+    end_date: Optional[date] = None,
+    exclude_locked: bool = False
 ) -> int:
     """
     Get total count of payroll records with same filters.
@@ -188,6 +193,9 @@ def get_payrolls_count(
     
     if branch_id:
         query = query.filter(Payroll.branch_id == branch_id)
+    
+    if exclude_locked:
+        query = query.filter(Payroll.is_locked == False)
     
     if payroll_type:
         query = query.filter(Payroll.payroll_type == payroll_type)
@@ -214,12 +222,19 @@ def update_payroll(db: Session, payroll_id: UUID, payroll_update: PayrollUpdate)
         Updated payroll instance if found, None otherwise
         
     Raises:
-        HTTPException: If worker or branch doesn't exist
+        HTTPException: If worker or branch doesn't exist, or if record is locked
     """
     # Get existing payroll
     db_payroll = get_payroll(db, payroll_id)
     if not db_payroll:
         return None
+    
+    # Check if record is locked
+    if db_payroll.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This payroll record is locked and cannot be modified"
+        )
     
     # Validate worker if being updated
     if payroll_update.worker_id:
@@ -399,10 +414,20 @@ def delete_payroll(db: Session, payroll_id: UUID) -> bool:
         
     Returns:
         True if payroll was deleted, False if not found
+        
+    Raises:
+        HTTPException: If record is locked
     """
     db_payroll = get_payroll(db, payroll_id)
     if not db_payroll:
         return False
+    
+    # Check if record is locked
+    if db_payroll.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This payroll record is locked and cannot be deleted"
+        )
     
     db.delete(db_payroll)
     db.commit()
@@ -593,3 +618,107 @@ def get_payroll_with_details(db: Session, payroll_id: UUID) -> Optional[Dict[str
         "worker_username": worker_username,
         "branch_name": branch_name
     }
+
+
+def bulk_lock_payroll(
+    db: Session,
+    record_ids: Optional[List[UUID]] = None,
+    date_range: Optional[Dict[str, date]] = None,
+    branch_id: Optional[UUID] = None
+) -> List[UUID]:
+    """Lock payroll records in bulk based on filters."""
+    query = db.query(Payroll)
+    
+    # Apply filters
+    if record_ids:
+        query = query.filter(Payroll.id.in_(record_ids))
+    
+    if date_range:
+        start_date = date_range.get('start_date')
+        end_date = date_range.get('end_date')
+        if start_date:
+            query = query.filter(Payroll.date >= start_date)
+        if end_date:
+            query = query.filter(Payroll.date <= end_date)
+    
+    if branch_id:
+        query = query.filter(Payroll.branch_id == branch_id)
+    
+    # Get records and lock them
+    payrolls = query.all()
+    locked_ids = []
+    
+    for payroll in payrolls:
+        if not payroll.is_locked:
+            payroll.is_locked = True
+            payroll.locked_at = datetime.utcnow()
+            locked_ids.append(payroll.id)
+    
+    db.commit()
+    db.expire_all()  # Clear session cache to ensure fresh data on next query
+    return locked_ids
+
+
+def bulk_unlock_payroll(db: Session, record_ids: List[UUID]) -> List[UUID]:
+    """Unlock payroll records in bulk by IDs."""
+    query = db.query(Payroll).filter(Payroll.id.in_(record_ids))
+    
+    payrolls = query.all()
+    unlocked_ids = []
+    
+    for payroll in payrolls:
+        if payroll.is_locked:
+            payroll.is_locked = False
+            payroll.locked_at = None
+            unlocked_ids.append(payroll.id)
+    
+    db.commit()
+    db.expire_all()  # Clear session cache to ensure fresh data on next query
+    return unlocked_ids
+
+
+def update_payroll_branch(db: Session, payroll_id: UUID, new_branch_id: UUID, is_super_admin: bool = False) -> Optional[Payroll]:
+    """
+    Update the branch_id for a payroll record.
+    
+    Args:
+        db: Database session
+        payroll_id: Payroll record unique identifier
+        new_branch_id: New branch ID to assign
+        is_super_admin: Whether the user is a super admin (can update locked records)
+        
+    Returns:
+        Updated payroll instance if found, None otherwise
+        
+    Raises:
+        HTTPException: If record is locked and user is not super admin, or if branch doesn't exist
+    """
+    # Get existing payroll record
+    db_payroll = get_payroll(db, payroll_id)
+    if not db_payroll:
+        return None
+    
+    # Check if record is locked
+    if db_payroll.is_locked and not is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This payroll record is locked and can only be modified by super admins"
+        )
+    
+    # Validate new branch exists
+    branch = db.query(Branch).filter(
+        Branch.id == new_branch_id,
+        Branch.deleted_at.is_(None)
+    ).first()
+    if not branch:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Branch with ID {new_branch_id} not found"
+        )
+    
+    # Update branch_id
+    db_payroll.branch_id = new_branch_id
+    
+    db.commit()
+    db.refresh(db_payroll)
+    return db_payroll

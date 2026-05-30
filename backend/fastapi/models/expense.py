@@ -10,10 +10,10 @@ from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, TYPE_CHECKING
 
-from sqlalchemy import Column, String, Text, Date, DateTime, Integer, ForeignKey, Numeric
+from sqlalchemy import Column, String, Text, Date, DateTime, Integer, ForeignKey, Numeric, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship, validates
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, text
 
 from backend.fastapi.dependencies.database import Base
 
@@ -184,6 +184,22 @@ class Expense(Base):
         doc="Timestamp when the expense record was last updated"
     )
     
+    # Lock fields
+    is_locked = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text('false'),
+        index=True,
+        doc="Whether this record is locked (read-only) by super admin"
+    )
+    
+    locked_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Timestamp when the record was locked"
+    )
+    
     # Relationships
     worker = relationship(
         "User",
@@ -250,6 +266,11 @@ class Expense(Base):
     def is_pending_reimbursement(self) -> bool:
         """Check if expense is pending reimbursement."""
         return self.is_reimbursable == 'pending'
+    
+    @property
+    def is_editable(self) -> bool:
+        """Check if expense record can be edited (not locked)."""
+        return not self.is_locked
     
     def __repr__(self):
         return (

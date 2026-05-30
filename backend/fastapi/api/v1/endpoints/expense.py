@@ -7,13 +7,16 @@ business purchases, operational costs, and reimbursement tracking.
 
 from uuid import UUID
 from typing import List, Optional
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import io
+import pandas as pd
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from backend.fastapi.dependencies.database import get_sync_db
-from backend.security.dependencies import get_current_admin, get_current_admin_or_user
+from backend.security.dependencies import get_current_admin, get_current_admin_or_user, get_current_super_admin, RequireSuperAdmin
 from backend.fastapi.models.admin import Admin
 from backend.fastapi.models.user import User
 from backend.fastapi.schemas.expense import (
@@ -26,7 +29,9 @@ from backend.fastapi.schemas.expense import (
     ExpensePeriodReport,
     ReimbursementReport,
     ExpenseReviewUpdate,
-    ExpenseReviewSummary
+    ExpenseReviewSummary,
+    BulkLockRequest,
+    BulkLockResponse
 )
 from backend.fastapi.crud import expense as expense_crud
 
@@ -121,7 +126,7 @@ async def delete_expense_record(
 async def list_expense_records(
     *,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user),
+    user_info: tuple = Depends(get_current_admin_or_user),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
     branch_id: Optional[UUID] = Query(None, description="Filter by branch ID"),
@@ -144,10 +149,16 @@ async def list_expense_records(
     
     Returns paginated list with metadata.
     """
+    # Unpack user info
+    current_user, role = user_info
+    
     # Filter by worker if user is not admin
     worker_id = None
     if isinstance(current_user, User):
         worker_id = current_user.id
+    
+    # Exclude locked records for non-super-admins
+    exclude_locked = not (isinstance(current_user, Admin) and current_user.is_super_admin)
     
     # Get expense records
     expense_records = expense_crud.get_expenses(
@@ -158,7 +169,8 @@ async def list_expense_records(
         branch_id=branch_id,
         start_date=start_date,
         end_date=end_date,
-        order_by=order_by
+        order_by=order_by,
+        exclude_locked=exclude_locked
     )
     
     # Convert Expense objects to ExpenseWithDetails by adding worker_username and branch_name
@@ -185,6 +197,8 @@ async def list_expense_records(
             "unit_cost": expense.unit_cost,
             "created_at": expense.created_at,
             "updated_at": expense.updated_at,
+            "is_locked": expense.is_locked,
+            "locked_at": expense.locked_at,
             "worker_username": expense.worker.username if expense.worker else "",
             "branch_name": expense.branch.name if expense.branch else "",
             "net_amount": expense.total_amount - (expense.tax_amount or Decimal("0")),
@@ -199,7 +213,8 @@ async def list_expense_records(
         worker_id=worker_id,
         branch_id=branch_id,
         start_date=start_date,
-        end_date=end_date
+        end_date=end_date,
+        exclude_locked=exclude_locked
     )
     
     return ExpenseListResponse(
@@ -220,7 +235,7 @@ async def list_expense_records(
 async def search_expense_records(
     *,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user),
+    user_info: tuple = Depends(get_current_admin_or_user),
     worker: Optional[UUID] = Query(None, description="Filter by worker ID"),
     branch: Optional[UUID] = Query(None, description="Filter by branch ID"),
     start_date: Optional[date] = Query(None, description="Filter from this date (YYYY-MM-DD)"),
@@ -265,6 +280,9 @@ async def search_expense_records(
     - min_amount: Minimum expense amount
     - max_amount: Maximum expense amount
     """
+    # Unpack user info
+    current_user, role = user_info
+    
     # Apply user restrictions
     worker_id = worker
     if isinstance(current_user, User):
@@ -284,6 +302,9 @@ async def search_expense_records(
             detail="min_amount must be less than or equal to max_amount"
         )
     
+    # Exclude locked records for non-super-admins
+    exclude_locked = not (isinstance(current_user, Admin) and current_user.is_super_admin)
+    
     # Get filtered expense records
     expense_records = expense_crud.get_expenses(
         db=db,
@@ -300,7 +321,8 @@ async def search_expense_records(
         has_receipt=has_receipt,
         min_amount=min_amount,
         max_amount=max_amount,
-        order_by=order_by
+        order_by=order_by,
+        exclude_locked=exclude_locked
     )
     
     # Convert Expense objects to ExpenseWithDetails by adding worker_username and branch_name
@@ -327,6 +349,8 @@ async def search_expense_records(
             "unit_cost": expense.unit_cost,
             "created_at": expense.created_at,
             "updated_at": expense.updated_at,
+            "is_locked": expense.is_locked,
+            "locked_at": expense.locked_at,
             "worker_username": expense.worker.username if expense.worker else "",
             "branch_name": expense.branch.name if expense.branch else "",
             "net_amount": expense.total_amount - (expense.tax_amount or Decimal("0")),
@@ -348,7 +372,8 @@ async def search_expense_records(
         payment_method=payment_method,
         has_receipt=has_receipt,
         min_amount=min_amount,
-        max_amount=max_amount
+        max_amount=max_amount,
+        exclude_locked=exclude_locked
     )
     
     return ExpenseListResponse(
@@ -358,6 +383,125 @@ async def search_expense_records(
         limit=limit,
         has_next=skip + limit < total_count
     )
+
+
+@router.get(
+    "/export/excel",
+    summary="Export Expense Records to Excel",
+    description="Export expense records to Excel file with optional filtering by date range and branch (admin-only)."
+)
+async def export_expenses_to_excel(
+    *,
+    db: Session = Depends(get_sync_db),
+    current_admin: Admin = Depends(get_current_admin),
+    branch_id: Optional[UUID] = Query(None, description="Filter by branch ID"),
+    start_date: Optional[date] = Query(None, description="Filter from this date"),
+    end_date: Optional[date] = Query(None, description="Filter until this date"),
+    order_by: str = Query("date_desc", pattern="^(date_desc|date_asc|amount_desc|amount_asc|category|vendor)$")
+):
+    """
+    Export expense records to Excel file (admin-only endpoint).
+    
+    - **Admins only** can export expense records
+    - Supports filtering by branch, start date, and end date
+    - Super admins see all records including locked ones
+    - Regular admins only see unlocked records
+    
+    Returns an Excel file for download.
+    """
+    # Exclude locked records for non-super-admins
+    exclude_locked = not current_admin.is_super_admin
+    
+    try:
+        # Get all expense records (no pagination for export)
+        expense_records = expense_crud.get_expenses(
+            db=db,
+            skip=0,
+            limit=10000,  # Large limit for export
+            worker_id=None,
+            branch_id=branch_id,
+            start_date=start_date,
+            end_date=end_date,
+            order_by=order_by,
+            exclude_locked=exclude_locked
+        )
+        
+        if not expense_records:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No expense records found for the specified criteria"
+            )
+        
+        # Convert to list of dictionaries for DataFrame
+        data = []
+        for expense in expense_records:
+            data.append({
+                "Fecha": expense.expense_date.strftime("%Y-%m-%d") if expense.expense_date else "",
+                "Colaborador": expense.worker.username if expense.worker else "",
+                "Sucursal": expense.branch.name if expense.branch else "",
+                "Categoría": expense.expense_category or "",
+                "Proveedor/Beneficiario": expense.vendor_payee or "",
+                "Descripción": expense.expense_description or "",
+                "Cantidad": expense.quantity or "",
+                "UDM": expense.unit_of_measure or "",
+                "Monto": float(expense.total_amount),
+                "IVA": float(expense.tax_amount) if expense.tax_amount else 0,
+                "Método de Pago": expense.payment_method or "",
+                "Reembolsable": expense.is_reimbursable or "",
+                "Tiene Recibo": "Sí" if expense.receipt_number else "No",
+                "Notas": expense.notes or "",
+                "Bloqueado": "Sí" if expense.is_locked else "No",
+                "Fecha de Bloqueo": expense.locked_at.strftime("%Y-%m-%d %H:%M:%S") if expense.locked_at else ""
+            })
+        
+        # Create DataFrame
+        df = pd.DataFrame(data)
+        
+        # Create Excel file in memory
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Egresos')
+            
+            # Get workbook and worksheet for formatting
+            workbook = writer.book
+            worksheet = writer.sheets['Egresos']
+            
+            # Format header
+            header_format = workbook.add_format({
+                'bold': True,
+                'bg_color': '#ED7D31',
+                'font_color': 'white',
+                'border': 1
+            })
+            
+            # Apply header format
+            for col_num, value in enumerate(df.columns.values):
+                worksheet.write(0, col_num, value, header_format)
+            
+            # Auto-adjust column widths
+            for i, col in enumerate(df.columns):
+                max_len = max(df[col].astype(str).map(len).max(), len(col)) + 2
+                worksheet.set_column(i, i, min(max_len, 50))
+        
+        output.seek(0)
+        
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"egresos_export_{timestamp}.xlsx"
+        
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate Excel export: {str(e)}"
+        )
 
 
 @router.get(
@@ -577,8 +721,8 @@ async def get_reimbursement_report(
                 "branch_id": expense.branch_id,
                 "unit_cost": expense.unit_cost,
                 "created_at": expense.created_at,
-                "updated_at": expense.updated_at,
-                "worker_username": expense.worker.username if expense.worker else "",
+                "updated_at": expense.updated_at,                "is_locked": expense.is_locked,
+                "locked_at": expense.locked_at,                "worker_username": expense.worker.username if expense.worker else "",
                 "branch_name": expense.branch.name if expense.branch else "",
                 "net_amount": expense.total_amount - (expense.tax_amount or Decimal("0")),
                 "has_receipt": bool(expense.receipt_number and expense.receipt_number.strip()),
@@ -606,7 +750,7 @@ async def get_reimbursement_report(
 async def get_expense_summary(
     *,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user),
+    user_info: tuple = Depends(get_current_admin_or_user),
     start_date: Optional[date] = Query(None, description="Summary start date"),
     end_date: Optional[date] = Query(None, description="Summary end date"),
     branch_id: Optional[UUID] = Query(None, description="Filter by branch (admins only)")
@@ -620,11 +764,17 @@ async def get_expense_summary(
     
     Returns expense summary with key metrics.
     """
+    # Unpack user info
+    current_user, role = user_info
+    
     # Apply user restrictions
     worker_id = None
     if isinstance(current_user, User):
         worker_id = current_user.id
         branch_id = None  # Users cannot filter by branch
+    
+    # Exclude locked records for non-super-admins
+    exclude_locked = not (isinstance(current_user, Admin) and current_user.is_super_admin)
     
     if start_date and end_date and start_date > end_date:
         raise HTTPException(
@@ -650,7 +800,8 @@ async def get_expense_summary(
                 limit=50,  # Last 50 records for summary
                 worker_id=worker_id,
                 branch_id=branch_id,
-                order_by="date_desc"
+                order_by="date_desc",
+                exclude_locked=exclude_locked
             )
             
             if recent_records:
@@ -796,6 +947,8 @@ async def get_expenses_pending_review(
                 "review_observations": expense.review_observations,
                 "created_at": expense.created_at,
                 "updated_at": expense.updated_at,
+                "is_locked": expense.is_locked,
+                "locked_at": expense.locked_at,
                 "worker_username": expense.worker.username if expense.worker else "Unknown",
                 "branch_name": expense.branch.name if expense.branch else "Unknown",
                 "net_amount": expense.net_amount,
@@ -871,6 +1024,8 @@ async def get_expenses_by_review_state(
                 "review_observations": expense.review_observations,
                 "created_at": expense.created_at,
                 "updated_at": expense.updated_at,
+                "is_locked": expense.is_locked,
+                "locked_at": expense.locked_at,
                 "worker_username": expense.worker.username if expense.worker else "Unknown",
                 "branch_name": expense.branch.name if expense.branch else "Unknown",
                 "net_amount": expense.net_amount,
@@ -884,4 +1039,138 @@ async def get_expenses_by_review_state(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get expenses by review state: {str(e)}"
+        )
+
+
+@router.post(
+    "/bulk-lock",
+    response_model=BulkLockResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Bulk Lock Expenses",
+    description="Lock multiple expense records to prevent editing. Super admin only.",
+    dependencies=[RequireSuperAdmin]
+)
+async def bulk_lock_expenses(
+    *,
+    db: Session = Depends(get_sync_db),
+    lock_request: BulkLockRequest,
+    current_admin: Admin = Depends(get_current_admin)
+) -> BulkLockResponse:
+    """
+    Lock expense records in bulk based on filters.
+    
+    Supports filtering by:
+    - record_ids: List of specific expense IDs
+    - date_range: Date range for expense_date
+    - branch_id: Filter by branch
+    """
+    try:
+        locked_ids = expense_crud.bulk_lock_expenses(
+            db=db,
+            record_ids=lock_request.record_ids,
+            date_range=lock_request.date_range,
+            branch_id=lock_request.branch_id
+        )
+        
+        return BulkLockResponse(
+            success=True,
+            locked_count=len(locked_ids),
+            message=f"Successfully locked {len(locked_ids)} expense record(s)",
+            locked_ids=locked_ids
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to lock expenses: {str(e)}"
+        )
+
+
+@router.post(
+    "/bulk-unlock",
+    response_model=BulkLockResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Bulk Unlock Expenses",
+    description="Unlock multiple expense records. Super admin only.",
+    dependencies=[RequireSuperAdmin]
+)
+async def bulk_unlock_expenses(
+    *,
+    db: Session = Depends(get_sync_db),
+    unlock_request: BulkLockRequest,
+    current_admin: Admin = Depends(get_current_admin)
+) -> BulkLockResponse:
+    """
+    Unlock expense records in bulk by IDs.
+    
+    Requires record_ids to be provided.
+    """
+    try:
+        if not unlock_request.record_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="record_ids must be provided for unlock operation"
+            )
+        
+        unlocked_ids = expense_crud.bulk_unlock_expenses(
+            db=db,
+            record_ids=unlock_request.record_ids
+        )
+        
+        return BulkLockResponse(
+            success=True,
+            locked_count=len(unlocked_ids),
+            message=f"Successfully unlocked {len(unlocked_ids)} expense record(s)",
+            locked_ids=unlocked_ids
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to unlock expenses: {str(e)}"
+        )
+
+
+@router.patch(
+    "/{expense_id}/branch",
+    response_model=ExpenseRead,
+    summary="Update Expense Branch",
+    description="Update the branch associated with an expense record. Super admin only."
+)
+async def update_expense_branch(
+    *,
+    db: Session = Depends(get_sync_db),
+    expense_id: UUID,
+    branch_id: UUID = Body(..., description="New branch ID to assign", embed=True),
+    current_admin: Admin = Depends(get_current_super_admin)
+) -> ExpenseRead:
+    """
+    Update the branch_id for an expense record.
+    
+    - **Super admins only** can update branch for any record (including locked)
+    - Validates that the new branch exists
+    
+    Returns the updated expense record.
+    """
+    try:
+        updated_expense = expense_crud.update_expense_branch(
+            db=db,
+            expense_id=expense_id,
+            new_branch_id=branch_id,
+            is_super_admin=True
+        )
+        
+        if not updated_expense:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Expense record with ID {expense_id} not found"
+            )
+        
+        return updated_expense
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update expense branch: {str(e)}"
         )

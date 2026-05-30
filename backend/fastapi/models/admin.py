@@ -46,12 +46,20 @@ class Admin(Base):
         comment="Bcrypt hashed password"
     )
     
-    # Status field
+    # Status fields
     is_active = Column(
         Boolean, 
         default=True, 
         nullable=False,
         comment="Whether the admin account is active"
+    )
+    
+    is_super_admin = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True,
+        comment="Whether the admin has super admin privileges (exclusive operations)"
     )
     
     # Timestamps
@@ -72,7 +80,7 @@ class Admin(Base):
 
     def __repr__(self) -> str:
         """String representation of the Admin model."""
-        return f"<Admin(id={self.id}, username='{self.username}', is_active={self.is_active})>"
+        return f"<Admin(id={self.id}, username='{self.username}', is_active={self.is_active}, is_super_admin={self.is_super_admin})>"
 
     def __str__(self) -> str:
         """Human-readable string representation."""

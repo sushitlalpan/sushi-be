@@ -119,7 +119,8 @@ def get_expenses(
     has_receipt: Optional[bool] = None,
     min_amount: Optional[Decimal] = None,
     max_amount: Optional[Decimal] = None,
-    order_by: str = "date_desc"
+    order_by: str = "date_desc",
+    exclude_locked: bool = False
 ) -> List[Expense]:
     """
     Get a list of expense records with filtering and pagination.
@@ -156,7 +157,11 @@ def get_expenses(
     if branch_id:
         query = query.filter(Expense.branch_id == branch_id)
     
+    if exclude_locked:
+        query = query.filter(Expense.is_locked == False)
+    
     if start_date:
+        query = query.filter(Expense.expense_date >= start_date)
         query = query.filter(Expense.expense_date >= start_date)
     
     if end_date:
@@ -223,7 +228,8 @@ def get_expenses_count(
     payment_method: Optional[str] = None,
     has_receipt: Optional[bool] = None,
     min_amount: Optional[Decimal] = None,
-    max_amount: Optional[Decimal] = None
+    max_amount: Optional[Decimal] = None,
+    exclude_locked: bool = False
 ) -> int:
     """
     Get total count of expense records with same filters.
@@ -243,6 +249,9 @@ def get_expenses_count(
     
     if branch_id:
         query = query.filter(Expense.branch_id == branch_id)
+    
+    if exclude_locked:
+        query = query.filter(Expense.is_locked == False)
     
     if start_date:
         query = query.filter(Expense.expense_date >= start_date)
@@ -296,12 +305,19 @@ def update_expense(db: Session, expense_id: UUID, expense_update: ExpenseUpdate)
         Updated expense instance if found, None otherwise
         
     Raises:
-        HTTPException: If worker or branch doesn't exist
+        HTTPException: If worker or branch doesn't exist, or if record is locked
     """
     # Get existing expense record
     db_expense = get_expense(db, expense_id)
     if not db_expense:
         return None
+    
+    # Check if record is locked
+    if db_expense.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This expense record is locked and cannot be modified"
+        )
     
     # Validate worker if being updated
     if expense_update.worker_id:
@@ -424,7 +440,7 @@ def get_expenses_by_review_state(db: Session, review_state: str, skip: int = 0, 
     """
     return (
         db.query(Expense)
-        .options(joinedload(Expense.worker), joinedload(Expense.branch))
+        .options(joinedload(Expense.worker), joinedload(Expense.branch))        .populate_existing()  # Force fresh data from database        .populate_existing()  # Force fresh data from database
         .filter(Expense.review_state == review_state.lower())
         .order_by(desc(Expense.expense_date))
         .offset(skip)
@@ -485,10 +501,20 @@ def delete_expense(db: Session, expense_id: UUID) -> bool:
         
     Returns:
         True if expense record was deleted, False if not found
+        
+    Raises:
+        HTTPException: If record is locked
     """
     db_expense = get_expense(db, expense_id)
     if not db_expense:
         return False
+    
+    # Check if record is locked
+    if db_expense.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This expense record is locked and cannot be deleted"
+        )
     
     db.delete(db_expense)
     db.commit()
@@ -862,3 +888,108 @@ def get_expense_with_details(db: Session, expense_id: UUID) -> Optional[Dict[str
     }
     
     return expense_dict
+
+
+def bulk_lock_expenses(
+    db: Session,
+    record_ids: Optional[List[UUID]] = None,
+    date_range: Optional[Dict[str, date]] = None,
+    branch_id: Optional[UUID] = None
+) -> List[UUID]:
+    """Lock expenses in bulk based on filters."""
+    query = db.query(Expense)
+    
+    # Apply filters
+    if record_ids:
+        query = query.filter(Expense.id.in_(record_ids))
+    
+    if date_range:
+        start_date = date_range.get('start_date')
+        end_date = date_range.get('end_date')
+        if start_date:
+            query = query.filter(Expense.expense_date >= start_date)
+        if end_date:
+            query = query.filter(Expense.expense_date <= end_date)
+    
+    if branch_id:
+        query = query.filter(Expense.branch_id == branch_id)
+    
+    # Get records and lock them
+    expenses = query.all()
+    locked_ids = []
+    
+    for expense in expenses:
+        if not expense.is_locked:
+            expense.is_locked = True
+            expense.locked_at = datetime.utcnow()
+            locked_ids.append(expense.id)
+    
+    db.commit()
+    db.expire_all()  # Clear session cache to ensure fresh data on next query
+    return locked_ids
+
+
+def bulk_unlock_expenses(db: Session, record_ids: List[UUID]) -> List[UUID]:
+    """Unlock expenses in bulk by IDs."""
+    query = db.query(Expense).filter(Expense.id.in_(record_ids))
+    
+    expenses = query.all()
+    unlocked_ids = []
+    
+    for expense in expenses:
+        if expense.is_locked:
+            expense.is_locked = False
+            expense.locked_at = None
+            unlocked_ids.append(expense.id)
+    
+    db.commit()
+    db.expire_all()  # Clear session cache to ensure fresh data on next query
+    return unlocked_ids
+
+
+def update_expense_branch(db: Session, expense_id: UUID, new_branch_id: UUID, is_super_admin: bool = False) -> Optional[Expense]:
+    """
+    Update the branch_id for an expense record.
+    
+    Args:
+        db: Database session
+        expense_id: Expense unique identifier
+        new_branch_id: New branch ID to assign
+        is_super_admin: Whether the user is a super admin (can update locked records)
+        
+    Returns:
+        Updated expense instance if found, None otherwise
+        
+    Raises:
+        HTTPException: If record is locked and user is not super admin, or if branch doesn't exist
+    """
+    # Get existing expense record
+    db_expense = get_expense(db, expense_id)
+    if not db_expense:
+        return None
+    
+    # Check if record is locked
+    if db_expense.is_locked and not is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This expense record is locked and can only be modified by super admins"
+        )
+    
+    # Validate new branch exists
+    branch = db.query(Branch).filter(
+        Branch.id == new_branch_id,
+        Branch.deleted_at.is_(None)
+    ).first()
+    if not branch:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Branch with ID {new_branch_id} not found"
+        )
+    
+    # Update branch_id
+    db_expense.branch_id = new_branch_id
+    db_expense.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(db_expense)
+    return db_expense

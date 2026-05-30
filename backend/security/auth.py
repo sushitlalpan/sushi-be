@@ -121,28 +121,32 @@ def get_token_payload(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def create_admin_token(admin_id: str, username: str, expires_delta: Optional[timedelta] = None) -> str:
+def create_admin_token(admin_id: str, username: str, is_super_admin: bool = False, expires_delta: Optional[timedelta] = None) -> str:
     """
     Create a JWT token specifically for admin users.
     
     Args:
         admin_id: Admin user ID (UUID as string)
         username: Admin username
+        is_super_admin: Whether the admin has super admin privileges
         expires_delta: Optional custom expiration time
         
     Returns:
         Encoded JWT token for admin user
         
     Example:
-        >>> token = create_admin_token("123e4567-e89b-12d3-a456-426614174000", "admin")
+        >>> token = create_admin_token("123e4567-e89b-12d3-a456-426614174000", "admin", is_super_admin=True)
         >>> payload = verify_access_token(token)
         >>> payload["role"] == "admin"
+        True
+        >>> payload["is_super_admin"] == True
         True
     """
     token_data = {
         "sub": admin_id,
         "username": username,
-        "role": "admin"
+        "role": "admin",
+        "is_super_admin": is_super_admin
     }
     
     return create_access_token(token_data, expires_delta)

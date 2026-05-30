@@ -20,7 +20,7 @@ from backend.fastapi.crud.branch import (
     update_branch, delete_branch, get_branch_with_stats,
     get_branches_with_stats, search_branches
 )
-from backend.security.dependencies import RequireActiveAdmin, get_current_admin_or_user
+from backend.security.dependencies import RequireActiveAdmin, RequireSuperAdmin, get_current_admin_or_user
 from backend.fastapi.models.user import User
 
 
@@ -31,12 +31,12 @@ router = APIRouter(tags=["branch-management"])
 async def create_new_branch(
     branch_data: BranchCreate,
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_admin: Admin = RequireSuperAdmin
 ):
     """
-    Create a new branch (admin-only endpoint).
+    Create a new branch (super admin only endpoint).
     
-    **Permissions:** Requires active admin authentication
+    **Permissions:** Requires super admin authentication
     
     **Parameters:**
     - **name**: Unique branch name (2-100 characters)
@@ -200,16 +200,16 @@ async def update_branch_by_id(
 async def delete_branch_by_id(
     branch_id: UUID,
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_admin: Admin = RequireSuperAdmin
 ):
     """
-    Soft delete branch by setting deleted_at timestamp (admin-only endpoint).
+    Soft delete branch by setting deleted_at timestamp (super admin only endpoint).
     
     This performs a soft delete which preserves the branch record and all associated
     data (payroll, sales, expenses) for historical purposes while marking the branch
     as deleted.
     
-    **Permissions:** Requires active admin authentication
+    **Permissions:** Requires super admin authentication
     
     **Validation:**
     - Cannot soft delete branches with active (non-deleted) users

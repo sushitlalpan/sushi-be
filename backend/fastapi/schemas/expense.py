@@ -308,6 +308,16 @@ class ExpenseRead(ExpenseBase):
         ...,
         description="Timestamp when expense was last updated"
     )
+    
+    is_locked: bool = Field(
+        default=False,
+        description="Whether this record is locked (read-only)"
+    )
+    
+    locked_at: Optional[datetime] = Field(
+        default=None,
+        description="Timestamp when the record was locked"
+    )
 
 
 class ExpenseWithDetails(ExpenseRead):
@@ -535,4 +545,47 @@ class ReimbursementReport(BaseModel):
     expense_records: List[ExpenseWithDetails] = Field(
         ...,
         description="List of expenses requiring attention"
+    )
+
+
+class BulkLockRequest(BaseModel):
+    """Schema for bulk lock request."""
+    
+    record_ids: Optional[List[UUID]] = Field(
+        default=None,
+        description="List of record IDs to lock (optional if using date range)"
+    )
+    
+    date_range: Optional[Dict[str, date]] = Field(
+        default=None,
+        description="Date range for bulk locking (start_date, end_date)"
+    )
+    
+    branch_id: Optional[UUID] = Field(
+        default=None,
+        description="Optional branch ID filter"
+    )
+
+
+class BulkLockResponse(BaseModel):
+    """Schema for bulk lock response."""
+    
+    success: bool = Field(
+        ...,
+        description="Whether the operation was successful"
+    )
+    
+    locked_count: int = Field(
+        ...,
+        description="Number of records locked"
+    )
+    
+    message: str = Field(
+        ...,
+        description="Response message"
+    )
+    
+    locked_ids: List[UUID] = Field(
+        default_factory=list,
+        description="List of locked record IDs"
     )

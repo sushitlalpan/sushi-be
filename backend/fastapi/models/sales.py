@@ -9,9 +9,10 @@ for each worker at each branch.
 from uuid import uuid4
 from datetime import datetime, timezone, date
 from decimal import Decimal
-from sqlalchemy import Column, String, Integer, Numeric, DateTime, Date, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, Numeric, DateTime, Date, ForeignKey, Text, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship, validates
+from sqlalchemy.sql import text
 from backend.fastapi.dependencies.database import Base
 
 
@@ -243,6 +244,22 @@ class Sales(Base):
         doc="When the sales record was created"
     )
     
+    # Lock fields
+    is_locked = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text('false'),
+        index=True,
+        doc="Whether this record is locked (read-only) by super admin"
+    )
+    
+    locked_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Timestamp when the record was locked"
+    )
+    
     # Relationships
     worker = relationship(
         "User",
@@ -349,3 +366,8 @@ class Sales(Base):
             "discrepancy": float(self.discrepancy),
             "avg_transaction": float(self.avg_sale)
         }
+    
+    @property
+    def is_editable(self) -> bool:
+        """Check if sales record can be edited (not locked)."""
+        return not self.is_locked
