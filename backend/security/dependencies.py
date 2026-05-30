@@ -124,6 +124,41 @@ async def get_current_active_admin(
     return current_admin
 
 
+async def get_current_super_admin(
+    current_admin: Admin = Depends(get_current_admin)
+) -> Admin:
+    """
+    Get current super admin user.
+    
+    This dependency ensures the authenticated user is both an active admin
+    AND has super admin privileges. Use this for endpoints that require
+    elevated permissions like admin management, bulk imports, and critical
+    system operations.
+    
+    Args:
+        current_admin: Current admin from get_current_admin
+        
+    Returns:
+        Active Admin instance with super admin privileges
+        
+    Raises:
+        HTTPException: If user is not a super admin (403 Forbidden)
+        
+    Usage:
+        @app.post("/admin/register")
+        async def register_admin(admin: Admin = Depends(get_current_super_admin)):
+            # Only super admins can create new admins
+            return {"message": "Admin created"}
+    """
+    if not current_admin.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super admin privileges required for this operation"
+        )
+    
+    return current_admin
+
+
 async def get_optional_current_admin(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
     db: Session = Depends(get_sync_db)
@@ -316,6 +351,7 @@ async def get_current_admin_or_user(
 RequireAuth = Depends(get_current_user_token)
 RequireAdmin = Depends(get_current_admin)
 RequireActiveAdmin = Depends(get_current_active_admin)
+RequireSuperAdmin = Depends(get_current_super_admin)
 RequireUser = Depends(get_current_user)
 RequireActiveUser = Depends(get_current_active_user)
 RequireAnyAuth = Depends(get_current_admin_or_user)

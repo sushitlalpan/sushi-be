@@ -133,7 +133,8 @@ def get_sales_records(
     end_date: Optional[date] = None,
     closure_number: Optional[int] = None,
     has_discrepancy: Optional[bool] = None,
-    order_by: str = "date_desc"
+    order_by: str = "date_desc",
+    exclude_locked: bool = False
 ) -> List[Sales]:
     """
     Get a list of sales records with filtering and pagination.
@@ -164,6 +165,9 @@ def get_sales_records(
     
     if branch_id:
         query = query.filter(Sales.branch_id == branch_id)
+    
+    if exclude_locked:
+        query = query.filter(Sales.is_locked == False)
     
     if start_date:
         query = query.filter(Sales.closure_date >= start_date)
@@ -204,7 +208,8 @@ def get_sales_count(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     closure_number: Optional[int] = None,
-    has_discrepancy: Optional[bool] = None
+    has_discrepancy: Optional[bool] = None,
+    exclude_locked: bool = False
 ) -> int:
     """
     Get total count of sales records with same filters.
@@ -224,6 +229,9 @@ def get_sales_count(
     
     if branch_id:
         query = query.filter(Sales.branch_id == branch_id)
+    
+    if exclude_locked:
+        query = query.filter(Sales.is_locked == False)
     
     if start_date:
         query = query.filter(Sales.closure_date >= start_date)
@@ -256,12 +264,19 @@ def update_sales(db: Session, sales_id: UUID, sales_update: SalesUpdate) -> Opti
         Updated sales instance if found, None otherwise
         
     Raises:
-        HTTPException: If worker or branch doesn't exist, or duplicate closure number
+        HTTPException: If worker or branch doesn't exist, duplicate closure number, or record is locked
     """
     # Get existing sales record
     db_sales = get_sales(db, sales_id)
     if not db_sales:
         return None
+    
+    # Check if record is locked
+    if db_sales.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This sales record is locked and cannot be modified"
+        )
     
     # Validate worker if being updated
     if sales_update.worker_id:
@@ -469,10 +484,20 @@ def delete_sales(db: Session, sales_id: UUID) -> bool:
         
     Returns:
         True if sales record was deleted, False if not found
+        
+    Raises:
+        HTTPException: If record is locked
     """
     db_sales = get_sales(db, sales_id)
     if not db_sales:
         return False
+    
+    # Check if record is locked
+    if db_sales.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This sales record is locked and cannot be deleted"
+        )
     
     db.delete(db_sales)
     db.commit()
@@ -761,3 +786,107 @@ def get_sales_with_details(db: Session, sales_id: UUID) -> Optional[Dict[str, An
     }
     
     return sales_dict
+
+
+def bulk_lock_sales(
+    db: Session,
+    record_ids: Optional[List[UUID]] = None,
+    date_range: Optional[Dict[str, date]] = None,
+    branch_id: Optional[UUID] = None
+) -> List[UUID]:
+    """Lock sales records in bulk based on filters."""
+    query = db.query(Sales)
+    
+    # Apply filters
+    if record_ids:
+        query = query.filter(Sales.id.in_(record_ids))
+    
+    if date_range:
+        start_date = date_range.get('start_date')
+        end_date = date_range.get('end_date')
+        if start_date:
+            query = query.filter(Sales.closure_date >= start_date)
+        if end_date:
+            query = query.filter(Sales.closure_date <= end_date)
+    
+    if branch_id:
+        query = query.filter(Sales.branch_id == branch_id)
+    
+    # Get records and lock them
+    sales_records = query.all()
+    locked_ids = []
+    
+    for sales in sales_records:
+        if not sales.is_locked:
+            sales.is_locked = True
+            sales.locked_at = datetime.utcnow()
+            locked_ids.append(sales.id)
+    
+    db.commit()
+    db.expire_all()  # Clear session cache to ensure fresh data on next query
+    return locked_ids
+
+
+def bulk_unlock_sales(db: Session, record_ids: List[UUID]) -> List[UUID]:
+    """Unlock sales records in bulk by IDs."""
+    query = db.query(Sales).filter(Sales.id.in_(record_ids))
+    
+    sales_records = query.all()
+    unlocked_ids = []
+    
+    for sales in sales_records:
+        if sales.is_locked:
+            sales.is_locked = False
+            sales.locked_at = None
+            unlocked_ids.append(sales.id)
+    
+    db.commit()
+    db.expire_all()  # Clear session cache to ensure fresh data on next query
+    return unlocked_ids
+
+
+def update_sales_branch(db: Session, sales_id: UUID, new_branch_id: UUID, is_super_admin: bool = False) -> Optional[Sales]:
+    """
+    Update the branch_id for a sales record.
+    
+    Args:
+        db: Database session
+        sales_id: Sales record unique identifier
+        new_branch_id: New branch ID to assign
+        is_super_admin: Whether the user is a super admin (can update locked records)
+        
+    Returns:
+        Updated sales instance if found, None otherwise
+        
+    Raises:
+        HTTPException: If record is locked and user is not super admin, or if branch doesn't exist
+    """
+    # Get existing sales record
+    db_sales = get_sales(db, sales_id)
+    if not db_sales:
+        return None
+    
+    # Check if record is locked
+    if db_sales.is_locked and not is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This sales record is locked and can only be modified by super admins"
+        )
+    
+    # Validate new branch exists
+    branch = db.query(Branch).filter(
+        Branch.id == new_branch_id,
+        Branch.deleted_at.is_(None)
+    ).first()
+    if not branch:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Branch with ID {new_branch_id} not found"
+        )
+    
+    # Update branch_id
+    db_sales.branch_id = new_branch_id
+    
+    db.commit()
+    db.refresh(db_sales)
+    return db_sales

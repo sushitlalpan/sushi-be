@@ -52,7 +52,8 @@ class AdminCRUD:
         db_admin = Admin(
             username=admin_data.username,
             password_hash=hashed_password,
-            is_active=admin_data.is_active
+            is_active=admin_data.is_active,
+            is_super_admin=admin_data.is_super_admin
         )
         
         # Save to database

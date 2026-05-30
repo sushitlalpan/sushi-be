@@ -165,6 +165,7 @@ async def register_user(
         return UserRead(
             id=user_with_branch.id,
             username=user_with_branch.username,
+            branch_id=user_with_branch.branch_id,
             branch_name=user_with_branch.branch.name if user_with_branch.branch else "Unknown Branch",
             phone_number=user_with_branch.phone_number,
             fingerprint_id=user_with_branch.fingerprint_id,

@@ -7,13 +7,16 @@ Includes create, delete, list (paginated), and search (filtered) operations.
 
 from uuid import UUID
 from typing import List, Optional
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import io
+import pandas as pd
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from backend.fastapi.dependencies.database import get_sync_db
-from backend.security.dependencies import get_current_admin, get_current_admin_or_user
+from backend.security.dependencies import get_current_admin, get_current_admin_or_user, get_current_super_admin, RequireSuperAdmin
 from backend.fastapi.models.admin import Admin
 from backend.fastapi.models.user import User
 from backend.fastapi.schemas.sales import (
@@ -26,7 +29,9 @@ from backend.fastapi.schemas.sales import (
     SalesPeriodReport,
     DiscrepancyReport,
     SalesReviewUpdate,
-    SalesReviewSummary
+    SalesReviewSummary,
+    BulkLockRequest,
+    BulkLockResponse
 )
 from backend.fastapi.crud import sales as sales_crud
 
@@ -71,18 +76,18 @@ async def create_sales_record(
 @router.delete(
     "/{sales_id}",
     summary="Delete Sales Record",
-    description="Delete a sales record by ID. Only admins can delete sales records."
+    description="Delete a sales record by ID. Only super admins can delete sales records."
 )
 async def delete_sales_record(
     *,
     db: Session = Depends(get_sync_db),
     sales_id: UUID,
-    current_user: Admin = Depends(get_current_admin)
+    current_user: Admin = Depends(get_current_super_admin)
 ):
     """
     Delete a sales record.
     
-    - **Only admins** can delete sales records
+    - **Only super admins** can delete sales records
     - Returns 404 if sales record doesn't exist
     """
     success = sales_crud.delete_sales(db=db, sales_id=sales_id)
@@ -104,7 +109,7 @@ async def delete_sales_record(
 async def list_sales_records(
     *,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user),
+    user_info: tuple = Depends(get_current_admin_or_user),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
     branch_id: Optional[UUID] = Query(None, description="Filter by branch ID"),
@@ -127,10 +132,16 @@ async def list_sales_records(
     
     Returns paginated list with metadata.
     """
+    # Unpack user info
+    current_user, role = user_info
+    
     # Filter by worker if user is not admin
     worker_id = None
     if isinstance(current_user, User):
         worker_id = current_user.id
+    
+    # Exclude locked records for non-super-admins
+    exclude_locked = not (isinstance(current_user, Admin) and current_user.is_super_admin)
     
     # Get sales records
     sales_records = sales_crud.get_sales_records(
@@ -141,7 +152,8 @@ async def list_sales_records(
         branch_id=branch_id,
         start_date=start_date,
         end_date=end_date,
-        order_by=order_by
+        order_by=order_by,
+        exclude_locked=exclude_locked
     )
     
     # Convert Sales objects to SalesWithDetails by adding worker_username and branch_name
@@ -172,6 +184,8 @@ async def list_sales_records(
             "review_state": sales.review_state,
             "review_observations": sales.review_observations,
             "created_at": sales.created_at,
+            "is_locked": sales.is_locked,
+            "locked_at": sales.locked_at,
             "worker_username": sales.worker.username if sales.worker else "",
             "branch_name": sales.branch.name if sales.branch else ""
         }
@@ -183,7 +197,8 @@ async def list_sales_records(
         worker_id=worker_id,
         branch_id=branch_id,
         start_date=start_date,
-        end_date=end_date
+        end_date=end_date,
+        exclude_locked=exclude_locked
     )
     
     return SalesListResponse(
@@ -204,7 +219,7 @@ async def list_sales_records(
 async def search_sales_records(
     *,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user),
+    user_info: tuple = Depends(get_current_admin_or_user),
     worker: Optional[UUID] = Query(None, description="Filter by worker ID"),
     branch: Optional[UUID] = Query(None, description="Filter by branch ID"),
     start_date: Optional[date] = Query(None, description="Filter from this date (YYYY-MM-DD)"),
@@ -237,6 +252,9 @@ async def search_sales_records(
     - has_discrepancy: Records with/without discrepancies
     - min_discrepancy: Minimum discrepancy amount
     """
+    # Unpack user info
+    current_user, role = user_info
+    
     # Apply user restrictions
     worker_id = worker
     if isinstance(current_user, User):
@@ -253,6 +271,9 @@ async def search_sales_records(
     if min_discrepancy is not None:
         has_discrepancy = True  # If min_discrepancy is set, only show records with discrepancies
     
+    # Exclude locked records for non-super-admins
+    exclude_locked = not (isinstance(current_user, Admin) and current_user.is_super_admin)
+    
     # Get filtered sales records
     sales_records = sales_crud.get_sales_records(
         db=db,
@@ -264,7 +285,8 @@ async def search_sales_records(
         end_date=end_date,
         closure_number=closure_number,
         has_discrepancy=has_discrepancy,
-        order_by=order_by
+        order_by=order_by,
+        exclude_locked=exclude_locked
     )
     
     # Apply additional filtering for min_discrepancy (since CRUD doesn't support this directly)
@@ -302,6 +324,8 @@ async def search_sales_records(
             "review_state": sales.review_state,
             "review_observations": sales.review_observations,
             "created_at": sales.created_at,
+            "is_locked": sales.is_locked,
+            "locked_at": sales.locked_at,
             "worker_username": sales.worker.username if sales.worker else "",
             "branch_name": sales.branch.name if sales.branch else ""
         }
@@ -315,7 +339,8 @@ async def search_sales_records(
         start_date=start_date,
         end_date=end_date,
         closure_number=closure_number,
-        has_discrepancy=has_discrepancy
+        has_discrepancy=has_discrepancy,
+        exclude_locked=exclude_locked
     )
     
     # Adjust total count for min_discrepancy filtering
@@ -331,6 +356,123 @@ async def search_sales_records(
         limit=limit,
         has_next=skip + limit < total_count
     )
+
+
+@router.get(
+    "/export/excel",
+    summary="Export Sales Records to Excel",
+    description="Export sales records to Excel file with optional filtering by date range and branch (admin-only)."
+)
+async def export_sales_to_excel(
+    *,
+    db: Session = Depends(get_sync_db),
+    current_admin: Admin = Depends(get_current_admin),
+    branch_id: Optional[UUID] = Query(None, description="Filter by branch ID"),
+    start_date: Optional[date] = Query(None, description="Filter from this date"),
+    end_date: Optional[date] = Query(None, description="Filter until this date"),
+    order_by: str = Query("date_desc", regex="^(date_desc|date_asc|sales_desc|sales_asc|discrepancy_desc)$")
+):
+    """
+    Export sales records to Excel file (admin-only endpoint).
+    
+    - **Admins only** can export sales records
+    - Supports filtering by branch, start date, and end date
+    - Super admins see all records including locked ones
+    - Regular admins only see unlocked records
+    
+    Returns an Excel file for download.
+    """
+    # Exclude locked records for non-super-admins
+    exclude_locked = not current_admin.is_super_admin
+    
+    try:
+        # Get all sales records (no pagination for export)
+        sales_records = sales_crud.get_sales_records(
+            db=db,
+            skip=0,
+            limit=10000,  # Large limit for export
+            worker_id=None,
+            branch_id=branch_id,
+            start_date=start_date,
+            end_date=end_date,
+            order_by=order_by,
+            exclude_locked=exclude_locked
+        )
+        
+        if not sales_records:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No sales records found for the specified criteria"
+            )
+        
+        # Convert to list of dictionaries for DataFrame
+        data = []
+        for sale in sales_records:
+            data.append({
+                "Fecha de Corte": sale.closure_date.strftime("%Y-%m-%d") if sale.closure_date else "",
+                "Colaborador": sale.worker.username if sale.worker else "",
+                "Sucursal": sale.branch.name if sale.branch else "",
+                "Número de Cierre": sale.closure_number,
+                "Ventas Totales": float(sale.sales_total),
+                "Número de Pagos": sale.payments_nbr,
+                "Total Tarjetas": float(sale.card_total),
+                "Total Efectivo": float(sale.cash_total),
+                "Total Ingresos": float(sale.revenue_total),
+                "Comisión Kiwi": float(sale.kiwi_fee_total),
+                "Discrepancia": float(sale.discrepancy),
+                "Notas": sale.notes or "",
+                "Bloqueado": "Sí" if sale.is_locked else "No",
+                "Fecha de Bloqueo": sale.locked_at.strftime("%Y-%m-%d %H:%M:%S") if sale.locked_at else ""
+            })
+        
+        # Create DataFrame
+        df = pd.DataFrame(data)
+        
+        # Create Excel file in memory
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Ventas')
+            
+            # Get workbook and worksheet for formatting
+            workbook = writer.book
+            worksheet = writer.sheets['Ventas']
+            
+            # Format header
+            header_format = workbook.add_format({
+                'bold': True,
+                'bg_color': '#4472C4',
+                'font_color': 'white',
+                'border': 1
+            })
+            
+            # Apply header format
+            for col_num, value in enumerate(df.columns.values):
+                worksheet.write(0, col_num, value, header_format)
+            
+            # Auto-adjust column widths
+            for i, col in enumerate(df.columns):
+                max_len = max(df[col].astype(str).map(len).max(), len(col)) + 2
+                worksheet.set_column(i, i, min(max_len, 50))
+        
+        output.seek(0)
+        
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"ventas_export_{timestamp}.xlsx"
+        
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate Excel export: {str(e)}"
+        )
 
 
 @router.get(
@@ -538,6 +680,8 @@ async def get_discrepancy_report(
                 "revenue_total": sales.revenue_total,
                 "notes": sales.notes,
                 "created_at": sales.created_at,
+                "is_locked": sales.is_locked,
+                "locked_at": sales.locked_at,
                 "worker_username": sales.worker.username if sales.worker else "",
                 "branch_name": sales.branch.name if sales.branch else ""
             }
@@ -563,7 +707,7 @@ async def get_discrepancy_report(
 async def get_sales_summary(
     *,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user),
+    user_info: tuple = Depends(get_current_admin_or_user),
     start_date: Optional[date] = Query(None, description="Summary start date"),
     end_date: Optional[date] = Query(None, description="Summary end date"),
     branch_id: Optional[UUID] = Query(None, description="Filter by branch (admins only)")
@@ -577,11 +721,17 @@ async def get_sales_summary(
     
     Returns sales summary with key metrics.
     """
+    # Unpack user info
+    current_user, role = user_info
+    
     # Apply user restrictions
     worker_id = None
     if isinstance(current_user, User):
         worker_id = current_user.id
         branch_id = None  # Users cannot filter by branch
+    
+    # Exclude locked records for non-super-admins
+    exclude_locked = not (isinstance(current_user, Admin) and current_user.is_super_admin)
     
     if start_date and end_date and start_date > end_date:
         raise HTTPException(
@@ -607,7 +757,8 @@ async def get_sales_summary(
                 limit=50,  # Last 50 records for summary
                 worker_id=worker_id,
                 branch_id=branch_id,
-                order_by="date_desc"
+                order_by="date_desc",
+                exclude_locked=exclude_locked
             )
             
             if recent_records:
@@ -738,6 +889,8 @@ async def get_sales_pending_review(
                 "review_state": sales.review_state,
                 "review_observations": sales.review_observations,
                 "created_at": sales.created_at,
+                "is_locked": sales.is_locked,
+                "locked_at": sales.locked_at,
                 "worker_username": sales.worker.username if sales.worker else "Unknown",
                 "branch_name": sales.branch.name if sales.branch else "Unknown"
             }
@@ -814,6 +967,8 @@ async def get_sales_by_review_state(
                 "review_state": sales.review_state,
                 "review_observations": sales.review_observations,
                 "created_at": sales.created_at,
+                "is_locked": sales.is_locked,
+                "locked_at": sales.locked_at,
                 "worker_username": sales.worker.username if sales.worker else "Unknown",
                 "branch_name": sales.branch.name if sales.branch else "Unknown"
             }
@@ -824,4 +979,138 @@ async def get_sales_by_review_state(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get sales records by review state: {str(e)}"
+        )
+
+
+@router.post(
+    "/bulk-lock",
+    response_model=BulkLockResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Bulk Lock Sales Records",
+    description="Lock multiple sales records to prevent editing. Super admin only.",
+    dependencies=[RequireSuperAdmin]
+)
+async def bulk_lock_sales_records(
+    *,
+    db: Session = Depends(get_sync_db),
+    lock_request: BulkLockRequest,
+    current_admin: Admin = Depends(get_current_admin)
+) -> BulkLockResponse:
+    """
+    Lock sales records in bulk based on filters.
+    
+    Supports filtering by:
+    - record_ids: List of specific sales IDs
+    - date_range: Date range for closure_date
+    - branch_id: Filter by branch
+    """
+    try:
+        locked_ids = sales_crud.bulk_lock_sales(
+            db=db,
+            record_ids=lock_request.record_ids,
+            date_range=lock_request.date_range,
+            branch_id=lock_request.branch_id
+        )
+        
+        return BulkLockResponse(
+            success=True,
+            locked_count=len(locked_ids),
+            message=f"Successfully locked {len(locked_ids)} sales record(s)",
+            locked_ids=locked_ids
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to lock sales records: {str(e)}"
+        )
+
+
+@router.post(
+    "/bulk-unlock",
+    response_model=BulkLockResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Bulk Unlock Sales Records",
+    description="Unlock multiple sales records. Super admin only.",
+    dependencies=[RequireSuperAdmin]
+)
+async def bulk_unlock_sales_records(
+    *,
+    db: Session = Depends(get_sync_db),
+    unlock_request: BulkLockRequest,
+    current_admin: Admin = Depends(get_current_admin)
+) -> BulkLockResponse:
+    """
+    Unlock sales records in bulk by IDs.
+    
+    Requires record_ids to be provided.
+    """
+    try:
+        if not unlock_request.record_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="record_ids must be provided for unlock operation"
+            )
+        
+        unlocked_ids = sales_crud.bulk_unlock_sales(
+            db=db,
+            record_ids=unlock_request.record_ids
+        )
+        
+        return BulkLockResponse(
+            success=True,
+            locked_count=len(unlocked_ids),
+            message=f"Successfully unlocked {len(unlocked_ids)} sales record(s)",
+            locked_ids=unlocked_ids
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to unlock sales records: {str(e)}"
+        )
+
+
+@router.patch(
+    "/{sales_id}/branch",
+    response_model=SalesRead,
+    summary="Update Sales Branch",
+    description="Update the branch associated with a sales record. Super admin only."
+)
+async def update_sales_branch(
+    *,
+    db: Session = Depends(get_sync_db),
+    sales_id: UUID,
+    branch_id: UUID = Body(..., description="New branch ID to assign", embed=True),
+    current_admin: Admin = Depends(get_current_super_admin)
+) -> SalesRead:
+    """
+    Update the branch_id for a sales record.
+    
+    - **Super admins only** can update branch for any record (including locked)
+    - Validates that the new branch exists
+    
+    Returns the updated sales record.
+    """
+    try:
+        updated_sales = sales_crud.update_sales_branch(
+            db=db,
+            sales_id=sales_id,
+            new_branch_id=branch_id,
+            is_super_admin=True
+        )
+        
+        if not updated_sales:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Sales record with ID {sales_id} not found"
+            )
+        
+        return updated_sales
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update sales branch: {str(e)}"
         )

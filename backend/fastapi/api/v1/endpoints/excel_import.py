@@ -23,7 +23,7 @@ from backend.fastapi.models.sales import Sales
 from backend.fastapi.models.expense import Expense
 from backend.fastapi.models.payroll import Payroll
 from backend.fastapi.core.utils import normalize_username, normalize_branch_name
-from backend.security.dependencies import RequireActiveAdmin
+from backend.security.dependencies import RequireActiveAdmin, RequireSuperAdmin
 
 
 router = APIRouter(prefix="/import", tags=["Excel Import"])
@@ -155,10 +155,12 @@ def safe_str(value: Any) -> str:
 async def import_sales_from_excel(
     file: UploadFile = File(...),
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_admin: Admin = RequireSuperAdmin
 ):
     """
     Import sales records from an Excel file (Ventas sheet).
+    
+    **Permissions:** Requires super admin authentication
     
     **Required Excel Columns:**
     - OPERADOR: Username of the worker
@@ -390,10 +392,12 @@ async def import_sales_from_excel(
 async def import_expenses_from_excel(
     file: UploadFile = File(...),
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_admin: Admin = RequireSuperAdmin
 ):
     """
     Import expense records from an Excel file (Egresos sheet).
+    
+    **Permissions:** Requires super admin authentication
     
     **Required Excel Columns:**
     - OPERADOR: Username of the worker
@@ -587,10 +591,12 @@ async def import_expenses_from_excel(
 async def import_payroll_from_excel(
     file: UploadFile = File(...),
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_admin: Admin = RequireSuperAdmin
 ):
     """
     Import payroll records from an Excel file (Nomina sheet).
+    
+    **Permissions:** Requires super admin authentication
     
     **Required Excel Columns:**
     - OPERADOR: Username of the worker

@@ -7,9 +7,10 @@ branch assignment, work period, and payment calculations.
 
 from uuid import uuid4
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Integer, Numeric, DateTime, ForeignKey
+from sqlalchemy import Column, String, Integer, Numeric, DateTime, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship, validates
+from sqlalchemy.sql import text
 from backend.fastapi.dependencies.database import Base
 
 
@@ -122,6 +123,22 @@ class Payroll(Base):
         doc="Timestamp when the payroll record was created"
     )
     
+    # Lock fields
+    is_locked = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text('false'),
+        index=True,
+        doc="Whether this record is locked (read-only) by super admin"
+    )
+    
+    locked_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Timestamp when the record was locked"
+    )
+    
     # Relationships
     worker = relationship(
         "User",
@@ -156,6 +173,11 @@ class Payroll(Base):
     def is_bonus_or_commission(self) -> bool:
         """Check if this is a bonus or commission payment."""
         return self.payroll_type in ["bonus", "commission"]
+    
+    @property
+    def is_editable(self) -> bool:
+        """Check if payroll record can be edited (not locked)."""
+        return not self.is_locked
     
     @validates('review_state')
     def validate_review_state(self, key, value):
