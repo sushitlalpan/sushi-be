@@ -76,18 +76,18 @@ async def create_sales_record(
 @router.delete(
     "/{sales_id}",
     summary="Delete Sales Record",
-    description="Delete a sales record by ID. Only super admins can delete sales records."
+    description="Delete a sales record by ID. All admins can delete sales records."
 )
 async def delete_sales_record(
     *,
     db: Session = Depends(get_sync_db),
     sales_id: UUID,
-    current_user: Admin = Depends(get_current_super_admin)
+    current_user: Admin = Depends(get_current_admin)
 ):
     """
     Delete a sales record.
     
-    - **Only super admins** can delete sales records
+    - **All admins** can delete sales records
     - Returns 404 if sales record doesn't exist
     """
     success = sales_crud.delete_sales(db=db, sales_id=sales_id)
