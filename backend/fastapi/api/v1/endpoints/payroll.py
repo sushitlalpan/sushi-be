@@ -525,12 +525,12 @@ async def update_payroll_record(
 async def delete_payroll_record(
     payroll_id: UUID,
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireSuperAdmin
+    current_admin: Admin = RequireActiveAdmin
 ):
     """
-    Delete payroll record (super admin only endpoint).
+    Delete payroll record (admin only endpoint).
     
-    **Permissions:** Requires super admin authentication
+    **Permissions:** Requires admin authentication
     
     **Security Notes:**
     - This permanently deletes the payroll record
@@ -544,7 +544,7 @@ async def delete_payroll_record(
     
     **Errors:**
     - **401**: Not authenticated or not admin
-    - **403**: Not a super admin
+    - **403**: Not an admin
     - **404**: Payroll record not found
     """
     success = delete_payroll(db, payroll_id)
