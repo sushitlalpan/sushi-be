@@ -114,6 +114,12 @@ class User(Base):
         nullable=False,
         doc="Account creation timestamp"
     )
+
+    create_user = Column(
+        String(100),
+        nullable=True,
+        doc="Role-qualified creator (e.g. 'admin:alice') or 'system'"
+    )
     
     updated_at = Column(
         DateTime,

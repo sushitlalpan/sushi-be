@@ -19,6 +19,13 @@ Adds `created_at` and `updated_at` timestamp fields to branches table.
 - Includes automatic trigger to update updated_at on record changes
 - Run this if you get "column branches.created_at does not exist" errors
 
+### 4. add_audit_fields
+Adds `create_user`, `last_updated_at` and `last_updated_user` audit columns to sales, expenses, payroll, and time_entries tables.
+- User columns store role-qualified usernames such as `superadmin:carol`, `admin:alice` or `user:bob`
+- All columns are nullable; existing rows are left `NULL` because the original actor is unknown
+- Also adds `create_user` only (not exposed in API responses) to branches, users, and admins; records created by the startup seed or bootstrap endpoint are stamped `system`
+- Rollback: `PYTHONPATH=. python migrations/add_audit_fields.py rollback`
+
 ## Running Migrations in Production (Railway)
 
 ### Option 1: Using Migration Runner (Recommended)
@@ -30,6 +37,7 @@ railway ssh
 python run_migration.py add_review_fields
 python run_migration.py add_soft_delete
 python run_migration.py add_branch_timestamps
+python run_migration.py add_audit_fields
 ```
 
 ### Option 2: Manual Migration
@@ -41,6 +49,7 @@ railway ssh
 PYTHONPATH=/app python migrations/add_review_fields.py
 PYTHONPATH=/app python migrations/add_soft_delete.py
 PYTHONPATH=/app python migrations/add_branch_timestamps.py
+PYTHONPATH=/app python migrations/add_audit_fields.py
 ```
 
 ## Creating New Migrations

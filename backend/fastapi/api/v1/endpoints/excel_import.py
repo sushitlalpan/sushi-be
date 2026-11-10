@@ -22,7 +22,7 @@ from backend.fastapi.models.branch import Branch
 from backend.fastapi.models.sales import Sales
 from backend.fastapi.models.expense import Expense
 from backend.fastapi.models.payroll import Payroll
-from backend.fastapi.core.utils import normalize_username, normalize_branch_name
+from backend.fastapi.core.utils import normalize_username, normalize_branch_name, stamp_created
 from backend.security.dependencies import RequireActiveAdmin, RequireSuperAdmin
 
 
@@ -356,6 +356,7 @@ async def import_sales_from_excel(
             imported_count = 0
             for record_data in valid_records:
                 sales_record = Sales(**record_data)
+                stamp_created(sales_record, current_admin)
                 # Calculate derived fields (card_total, cash_total, discrepancy, avg_sale, etc.)
                 sales_record.calculate_totals()
                 db.add(sales_record)
@@ -555,6 +556,7 @@ async def import_expenses_from_excel(
             imported_count = 0
             for record_data in valid_records:
                 expense_record = Expense(**record_data)
+                stamp_created(expense_record, current_admin)
                 # Calculate unit_cost if needed (validates consistency)
                 expense_record.calculate_unit_cost()
                 db.add(expense_record)
@@ -741,6 +743,7 @@ async def import_payroll_from_excel(
             imported_count = 0
             for record_data in valid_records:
                 payroll_record = Payroll(**record_data)
+                stamp_created(payroll_record, current_admin)
                 db.add(payroll_record)
                 imported_count += 1
             

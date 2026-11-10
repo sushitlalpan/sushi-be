@@ -69,6 +69,12 @@ class Admin(Base):
         nullable=False,
         comment="When the admin account was created"
     )
+
+    create_user = Column(
+        String(100),
+        nullable=True,
+        comment="Role-qualified creator (e.g. 'superadmin:carol') or 'system'"
+    )
     
     updated_at = Column(
         DateTime, 

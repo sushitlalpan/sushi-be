@@ -51,7 +51,7 @@ async def create_new_branch(
     - **422**: Validation errors
     """
     try:
-        branch = create_branch(db, branch_data)
+        branch = create_branch(db, branch_data, actor=current_admin)
         return BranchRead.model_validate(branch)
     except HTTPException:
         raise
@@ -69,7 +69,7 @@ async def list_branches(
     search: Optional[str] = Query(None, description="Search term for branch names"),
     include_stats: bool = Query(False, description="Include user and payroll statistics"),
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    user_info: tuple = Depends(get_current_admin_or_user)
 ):
     """
     Get list of all branches.
@@ -89,6 +89,7 @@ async def list_branches(
     - **401**: Not authenticated
     - **403**: Account deactivated
     """
+    current_user, _role = user_info
     try:
         # Users cannot access stats, only admins can
         if include_stats and not isinstance(current_user, Admin):
@@ -123,7 +124,7 @@ async def list_branches(
 async def get_branch_by_id(
     branch_id: UUID,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    user_info: tuple = Depends(get_current_admin_or_user)
 ):
     """
     Get specific branch by ID with statistics.

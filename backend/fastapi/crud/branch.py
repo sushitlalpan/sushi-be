@@ -16,9 +16,10 @@ from backend.fastapi.models.branch import Branch
 from backend.fastapi.models.user import User
 from backend.fastapi.models.payroll import Payroll
 from backend.fastapi.schemas.branch import BranchCreate, BranchUpdate
+from backend.fastapi.core.utils import audit_user_label
 
 
-def create_branch(db: Session, branch_data: BranchCreate) -> Branch:
+def create_branch(db: Session, branch_data: BranchCreate, actor=None) -> Branch:
     """
     Create a new branch.
     
@@ -42,7 +43,8 @@ def create_branch(db: Session, branch_data: BranchCreate) -> Branch:
     
     # Create new branch
     db_branch = Branch(
-        name=branch_data.name
+        name=branch_data.name,
+        create_user=audit_user_label(actor) if actor else "system"
     )
     
     db.add(db_branch)

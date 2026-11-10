@@ -16,10 +16,11 @@ from fastapi import HTTPException, status
 from backend.fastapi.models.expense import Expense
 from backend.fastapi.models.user import User
 from backend.fastapi.models.branch import Branch
+from backend.fastapi.core.utils import stamp_created, stamp_updated
 from backend.fastapi.schemas.expense import ExpenseCreate, ExpenseUpdate
 
 
-def create_expense(db: Session, expense_data: ExpenseCreate) -> Expense:
+def create_expense(db: Session, expense_data: ExpenseCreate, *, actor) -> Expense:
     """
     Create a new expense record with automatic calculations.
     
@@ -77,6 +78,7 @@ def create_expense(db: Session, expense_data: ExpenseCreate) -> Expense:
     
     # Calculate unit cost
     db_expense.calculate_unit_cost()
+    stamp_created(db_expense, actor)
     
     db.add(db_expense)
     db.commit()
@@ -292,7 +294,7 @@ def get_expenses_count(
     return query.count()
 
 
-def update_expense(db: Session, expense_id: UUID, expense_update: ExpenseUpdate) -> Optional[Expense]:
+def update_expense(db: Session, expense_id: UUID, expense_update: ExpenseUpdate, *, actor) -> Optional[Expense]:
     """
     Update an existing expense record.
     
@@ -305,19 +307,12 @@ def update_expense(db: Session, expense_id: UUID, expense_update: ExpenseUpdate)
         Updated expense instance if found, None otherwise
         
     Raises:
-        HTTPException: If worker or branch doesn't exist, or if record is locked
+        HTTPException: If worker or branch doesn't exist
     """
     # Get existing expense record
     db_expense = get_expense(db, expense_id)
     if not db_expense:
         return None
-    
-    # Check if record is locked
-    if db_expense.is_locked:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This expense record is locked and cannot be modified"
-        )
     
     # Validate worker if being updated
     if expense_update.worker_id:
@@ -351,6 +346,7 @@ def update_expense(db: Session, expense_id: UUID, expense_update: ExpenseUpdate)
     # Recalculate unit cost if amount or quantity changed
     if 'total_amount' in update_data or 'quantity' in update_data:
         db_expense.calculate_unit_cost()
+    stamp_updated(db_expense, actor)
     
     db.commit()
     db.refresh(db_expense)
@@ -464,7 +460,7 @@ def get_expenses_pending_review(db: Session, skip: int = 0, limit: int = 100) ->
     return get_expenses_by_review_state(db, "pending", skip, limit)
 
 
-def update_expense_review_status(db: Session, expense_id: UUID, review_state: str, review_observations: Optional[str] = None) -> Optional[Expense]:
+def update_expense_review_status(db: Session, expense_id: UUID, review_state: str, review_observations: Optional[str] = None, *, actor) -> Optional[Expense]:
     """
     Update the review status of an expense.
     
@@ -484,6 +480,7 @@ def update_expense_review_status(db: Session, expense_id: UUID, review_state: st
     db_expense.review_state = review_state.lower()
     if review_observations is not None:
         db_expense.review_observations = review_observations
+    stamp_updated(db_expense, actor)
     
     db.commit()
     db.refresh(db_expense)
@@ -880,6 +877,9 @@ def get_expense_with_details(db: Session, expense_id: UUID) -> Optional[Dict[str
         "notes": expense.notes,
         "created_at": expense.created_at,
         "updated_at": expense.updated_at,
+        "create_user": expense.create_user,
+        "last_updated_at": expense.last_updated_at,
+        "last_updated_user": expense.last_updated_user,
         "worker_username": worker_username,
         "branch_name": branch_name,
         "net_amount": expense.net_amount,
@@ -947,7 +947,7 @@ def bulk_unlock_expenses(db: Session, record_ids: List[UUID]) -> List[UUID]:
     return unlocked_ids
 
 
-def update_expense_branch(db: Session, expense_id: UUID, new_branch_id: UUID, is_super_admin: bool = False) -> Optional[Expense]:
+def update_expense_branch(db: Session, expense_id: UUID, new_branch_id: UUID, is_super_admin: bool = False, *, actor) -> Optional[Expense]:
     """
     Update the branch_id for an expense record.
     
@@ -989,6 +989,7 @@ def update_expense_branch(db: Session, expense_id: UUID, new_branch_id: UUID, is
     # Update branch_id
     db_expense.branch_id = new_branch_id
     db_expense.updated_at = datetime.utcnow()
+    stamp_updated(db_expense, actor)
     
     db.commit()
     db.refresh(db_expense)

@@ -49,7 +49,7 @@ async def create_sales_record(
     *,
     db: Session = Depends(get_sync_db),
     sales_in: SalesCreate,
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    user_info: tuple = Depends(get_current_admin_or_user)
 ) -> SalesRead:
     """
     Create a new sales record.
@@ -61,8 +61,9 @@ async def create_sales_record(
     
     Returns the created sales record with calculated fields.
     """
+    actor, _role = user_info
     try:
-        sales_record = sales_crud.create_sales(db=db, sales_data=sales_in)
+        sales_record = sales_crud.create_sales(db=db, sales_data=sales_in, actor=actor)
         return sales_record
     except HTTPException:
         raise
@@ -184,6 +185,9 @@ async def list_sales_records(
             "review_state": sales.review_state,
             "review_observations": sales.review_observations,
             "created_at": sales.created_at,
+            "create_user": sales.create_user,
+            "last_updated_at": sales.last_updated_at,
+            "last_updated_user": sales.last_updated_user,
             "is_locked": sales.is_locked,
             "locked_at": sales.locked_at,
             "worker_username": sales.worker.username if sales.worker else "",
@@ -324,6 +328,9 @@ async def search_sales_records(
             "review_state": sales.review_state,
             "review_observations": sales.review_observations,
             "created_at": sales.created_at,
+            "create_user": sales.create_user,
+            "last_updated_at": sales.last_updated_at,
+            "last_updated_user": sales.last_updated_user,
             "is_locked": sales.is_locked,
             "locked_at": sales.locked_at,
             "worker_username": sales.worker.username if sales.worker else "",
@@ -485,7 +492,7 @@ async def get_sales_record(
     *,
     db: Session = Depends(get_sync_db),
     sales_id: UUID,
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    user_info: tuple = Depends(get_current_admin_or_user)
 ) -> SalesWithDetails:
     """
     Get a specific sales record with details.
@@ -494,6 +501,7 @@ async def get_sales_record(
     - **Users** can only view their own sales records
     - Returns detailed information including worker and branch names
     """
+    current_user, _role = user_info
     sales_record = sales_crud.get_sales(db=db, sales_id=sales_id)
     if not sales_record:
         raise HTTPException(
@@ -523,19 +531,19 @@ async def get_sales_record(
     "/{sales_id}",
     response_model=SalesRead,
     summary="Update Sales Record",
-    description="Update a sales record. Only admins can update sales records."
+    description="Update a sales record. Only super admins can update sales records."
 )
 async def update_sales_record(
     *,
     db: Session = Depends(get_sync_db),
     sales_id: UUID,
     sales_update: SalesUpdate,
-    current_user: Admin = Depends(get_current_admin)
+    current_admin: Admin = RequireSuperAdmin
 ) -> SalesRead:
     """
     Update a sales record.
     
-    - **Only admins** can update sales records
+    - **Only super admins** can update sales records
     - Validates worker and branch existence if being updated
     - Prevents duplicate closure numbers
     - Automatically recalculates totals and discrepancies
@@ -546,7 +554,8 @@ async def update_sales_record(
         updated_sales = sales_crud.update_sales(
             db=db,
             sales_id=sales_id,
-            sales_update=sales_update
+            sales_update=sales_update,
+            actor=current_admin
         )
         
         if not updated_sales:
@@ -680,6 +689,9 @@ async def get_discrepancy_report(
                 "revenue_total": sales.revenue_total,
                 "notes": sales.notes,
                 "created_at": sales.created_at,
+                "create_user": sales.create_user,
+                "last_updated_at": sales.last_updated_at,
+                "last_updated_user": sales.last_updated_user,
                 "is_locked": sales.is_locked,
                 "locked_at": sales.locked_at,
                 "worker_username": sales.worker.username if sales.worker else "",
@@ -823,7 +835,8 @@ async def update_sales_review(
             db=db,
             sales_id=sales_id,
             review_state=review_update.review_state,
-            review_observations=review_update.review_observations
+            review_observations=review_update.review_observations,
+            actor=current_admin
         )
         
         if not sales:
@@ -889,6 +902,9 @@ async def get_sales_pending_review(
                 "review_state": sales.review_state,
                 "review_observations": sales.review_observations,
                 "created_at": sales.created_at,
+                "create_user": sales.create_user,
+                "last_updated_at": sales.last_updated_at,
+                "last_updated_user": sales.last_updated_user,
                 "is_locked": sales.is_locked,
                 "locked_at": sales.locked_at,
                 "worker_username": sales.worker.username if sales.worker else "Unknown",
@@ -967,6 +983,9 @@ async def get_sales_by_review_state(
                 "review_state": sales.review_state,
                 "review_observations": sales.review_observations,
                 "created_at": sales.created_at,
+                "create_user": sales.create_user,
+                "last_updated_at": sales.last_updated_at,
+                "last_updated_user": sales.last_updated_user,
                 "is_locked": sales.is_locked,
                 "locked_at": sales.locked_at,
                 "worker_username": sales.worker.username if sales.worker else "Unknown",
@@ -1097,7 +1116,8 @@ async def update_sales_branch(
             db=db,
             sales_id=sales_id,
             new_branch_id=branch_id,
-            is_super_admin=True
+            is_super_admin=True,
+            actor=current_admin
         )
         
         if not updated_sales:

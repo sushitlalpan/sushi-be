@@ -164,6 +164,16 @@ class ExpenseCreate(ExpenseBase):
 
 class ExpenseUpdate(BaseModel):
     """Schema for updating existing expense records."""
+
+    worker_id: Optional[UUID] = Field(
+        default=None,
+        description="ID of the user who incurred the expense"
+    )
+
+    branch_id: Optional[UUID] = Field(
+        default=None,
+        description="ID of the branch where the expense was incurred"
+    )
     
     expense_date: Optional[date] = Field(
         default=None,
@@ -307,6 +317,21 @@ class ExpenseRead(ExpenseBase):
     updated_at: datetime = Field(
         ...,
         description="Timestamp when expense was last updated"
+    )
+    
+    create_user: Optional[str] = Field(
+        default=None,
+        description="Role-qualified username of the creator"
+    )
+    
+    last_updated_at: Optional[datetime] = Field(
+        default=None,
+        description="When the record was last updated by a user"
+    )
+    
+    last_updated_user: Optional[str] = Field(
+        default=None,
+        description="Role-qualified username of the last updater"
     )
     
     is_locked: bool = Field(

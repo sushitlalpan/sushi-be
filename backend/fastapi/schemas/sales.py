@@ -302,7 +302,7 @@ class SalesRead(SalesBase):
     # Calculated fields
     card_total: Decimal = Field(
         ...,
-        description="Calculated card total (card_itpv - card_refund + transfer_amt)"
+        description="Calculated card total (card_kiwi + transfer_amt)"
     )
     
     cash_total: Decimal = Field(
@@ -335,6 +335,21 @@ class SalesRead(SalesBase):
         description="When the sales record was created"
     )
     
+    create_user: Optional[str] = Field(
+        default=None,
+        description="Role-qualified username of the creator"
+    )
+    
+    last_updated_at: Optional[datetime] = Field(
+        default=None,
+        description="When the record was last updated"
+    )
+    
+    last_updated_user: Optional[str] = Field(
+        default=None,
+        description="Role-qualified username of the last updater"
+    )
+    
     is_locked: bool = Field(
         default=False,
         description="Whether this record is locked (read-only)"
@@ -360,11 +375,11 @@ class SalesRead(SalesBase):
                 "card_refund": "25.00",
                 "card_kiwi": "300.00",
                 "transfer_amt": "50.00",
-                "card_total": "825.00",
+                "card_total": "350.00",
                 "cash_amt": "500.00",
                 "cash_refund": "24.50",
                 "cash_total": "475.50",
-                "discrepancy": "50.00",
+                "discrepancy": "-425.00",
                 "avg_sale": "50.02",
                 "kiwi_fee_total": "12.50",
                 "card_kiwi_minus_fee": "287.50",

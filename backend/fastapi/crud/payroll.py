@@ -16,10 +16,11 @@ from fastapi import HTTPException, status
 from backend.fastapi.models.payroll import Payroll
 from backend.fastapi.models.user import User
 from backend.fastapi.models.branch import Branch
+from backend.fastapi.core.utils import stamp_created, stamp_updated
 from backend.fastapi.schemas.payroll import PayrollCreate, PayrollUpdate
 
 
-def create_payroll(db: Session, payroll_data: PayrollCreate) -> Payroll:
+def create_payroll(db: Session, payroll_data: PayrollCreate, *, actor) -> Payroll:
     """
     Create a new payroll record.
     
@@ -67,6 +68,7 @@ def create_payroll(db: Session, payroll_data: PayrollCreate) -> Payroll:
         review_state=payroll_data.review_state,
         review_observations=payroll_data.review_observations
     )
+    stamp_created(db_payroll, actor)
     
     db.add(db_payroll)
     db.commit()
@@ -209,7 +211,7 @@ def get_payrolls_count(
     return query.count()
 
 
-def update_payroll(db: Session, payroll_id: UUID, payroll_update: PayrollUpdate) -> Optional[Payroll]:
+def update_payroll(db: Session, payroll_id: UUID, payroll_update: PayrollUpdate, *, actor) -> Optional[Payroll]:
     """
     Update an existing payroll record.
     
@@ -222,19 +224,12 @@ def update_payroll(db: Session, payroll_id: UUID, payroll_update: PayrollUpdate)
         Updated payroll instance if found, None otherwise
         
     Raises:
-        HTTPException: If worker or branch doesn't exist, or if record is locked
+        HTTPException: If worker or branch doesn't exist
     """
     # Get existing payroll
     db_payroll = get_payroll(db, payroll_id)
     if not db_payroll:
         return None
-    
-    # Check if record is locked
-    if db_payroll.is_locked:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This payroll record is locked and cannot be modified"
-        )
     
     # Validate worker if being updated
     if payroll_update.worker_id:
@@ -264,6 +259,7 @@ def update_payroll(db: Session, payroll_id: UUID, payroll_update: PayrollUpdate)
     update_data = payroll_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(db_payroll, field, value)
+    stamp_updated(db_payroll, actor)
     
     db.commit()
     db.refresh(db_payroll)
@@ -377,7 +373,7 @@ def get_payroll_pending_review(db: Session, skip: int = 0, limit: int = 100) -> 
     return get_payroll_by_review_state(db, "pending", skip, limit)
 
 
-def update_payroll_review_status(db: Session, payroll_id: UUID, review_state: str, review_observations: Optional[str] = None) -> Optional[Payroll]:
+def update_payroll_review_status(db: Session, payroll_id: UUID, review_state: str, review_observations: Optional[str] = None, *, actor) -> Optional[Payroll]:
     """
     Update the review status of a payroll record.
     
@@ -397,6 +393,7 @@ def update_payroll_review_status(db: Session, payroll_id: UUID, review_state: st
     db_payroll.review_state = review_state.lower()
     if review_observations is not None:
         db_payroll.review_observations = review_observations
+    stamp_updated(db_payroll, actor)
     
     db.commit()
     db.refresh(db_payroll)
@@ -615,6 +612,9 @@ def get_payroll_with_details(db: Session, payroll_id: UUID) -> Optional[Dict[str
         "payroll_type": payroll.payroll_type,
         "notes": payroll.notes,
         "created_at": payroll.created_at,
+        "create_user": payroll.create_user,
+        "last_updated_at": payroll.last_updated_at,
+        "last_updated_user": payroll.last_updated_user,
         "worker_username": worker_username,
         "branch_name": branch_name
     }
@@ -677,7 +677,7 @@ def bulk_unlock_payroll(db: Session, record_ids: List[UUID]) -> List[UUID]:
     return unlocked_ids
 
 
-def update_payroll_branch(db: Session, payroll_id: UUID, new_branch_id: UUID, is_super_admin: bool = False) -> Optional[Payroll]:
+def update_payroll_branch(db: Session, payroll_id: UUID, new_branch_id: UUID, is_super_admin: bool = False, *, actor) -> Optional[Payroll]:
     """
     Update the branch_id for a payroll record.
     
@@ -718,6 +718,7 @@ def update_payroll_branch(db: Session, payroll_id: UUID, new_branch_id: UUID, is
     
     # Update branch_id
     db_payroll.branch_id = new_branch_id
+    stamp_updated(db_payroll, actor)
     
     db.commit()
     db.refresh(db_payroll)

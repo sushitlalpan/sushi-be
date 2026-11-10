@@ -17,7 +17,7 @@ from backend.fastapi.models.user import User
 from backend.fastapi.models.branch import Branch
 from backend.fastapi.schemas.user import UserCreate, UserUpdate
 from backend.security.password import hash_password
-from backend.fastapi.core.utils import normalize_username
+from backend.fastapi.core.utils import normalize_username, audit_user_label
 
 
 class UserCRUD:
@@ -27,7 +27,7 @@ class UserCRUD:
         """Initialize with database session."""
         self.db = db
     
-    def create_user(self, user_data: UserCreate) -> User:
+    def create_user(self, user_data: UserCreate, actor=None) -> User:
         """
         Create a new staff user.
         
@@ -66,7 +66,8 @@ class UserCRUD:
             branch_id=user_data.branch_id,
             phone_number=user_data.phone_number,
             fingerprint_id=user_data.fingerprint_id,
-            is_active=user_data.is_active
+            is_active=user_data.is_active,
+            create_user=audit_user_label(actor) if actor else "system"
         )
         
         # Add to database
@@ -259,9 +260,9 @@ class AsyncUserCRUD:
 
 
 # Convenience functions
-def create_user(db: Session, user_data: UserCreate) -> User:
+def create_user(db: Session, user_data: UserCreate, actor=None) -> User:
     """Create a new user."""
-    return UserCRUD(db).create_user(user_data)
+    return UserCRUD(db).create_user(user_data, actor)
 
 
 def get_user_by_username(db: Session, username: str) -> Optional[User]:

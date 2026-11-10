@@ -74,7 +74,7 @@ async def clock_action(
         )
         
         # Create the time entry
-        time_entry = create_time_entry(db, current_user.id, entry_data)
+        time_entry = create_time_entry(db, current_user.id, entry_data, actor=current_user)
         
         # Get current status
         current_status = get_user_clock_status(db, current_user.id)
@@ -363,7 +363,7 @@ async def create_time_entry_admin(
     - **400**: Invalid time entry (e.g., double clock-in)
     """
     try:
-        time_entry = create_time_entry(db, user_id, entry_data)
+        time_entry = create_time_entry(db, user_id, entry_data, actor=current_admin)
         return TimeEntryRead.model_validate(time_entry)
     except HTTPException:
         raise
