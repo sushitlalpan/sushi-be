@@ -14,6 +14,7 @@ from fastapi import HTTPException, status
 
 from backend.fastapi.models.time_entry import TimeEntry, TimeEntryType
 from backend.fastapi.models.user import User
+from backend.fastapi.core.utils import stamp_created, stamp_updated
 from backend.fastapi.schemas.time_entry import TimeEntryCreate, TimeEntryUpdate
 
 
@@ -24,7 +25,7 @@ class TimeEntryCRUD:
         """Initialize with database session."""
         self.db = db
     
-    def create_time_entry(self, user_id: UUID, entry_data: TimeEntryCreate) -> TimeEntry:
+    def create_time_entry(self, user_id: UUID, entry_data: TimeEntryCreate, *, actor) -> TimeEntry:
         """
         Create a new time entry.
         
@@ -75,6 +76,7 @@ class TimeEntryCRUD:
             method=entry_data.method or "manual",
             notes=entry_data.notes
         )
+        stamp_created(db_entry, actor)
         
         self.db.add(db_entry)
         self.db.commit()
@@ -257,7 +259,7 @@ class TimeEntryCRUD:
         
         return [row[0] for row in query.all()]
     
-    def update_time_entry(self, entry_id: UUID, entry_data: TimeEntryUpdate) -> Optional[TimeEntry]:
+    def update_time_entry(self, entry_id: UUID, entry_data: TimeEntryUpdate, *, actor) -> Optional[TimeEntry]:
         """
         Update time entry information.
         
@@ -277,6 +279,7 @@ class TimeEntryCRUD:
         
         for field, value in update_data.items():
             setattr(db_entry, field, value)
+        stamp_updated(db_entry, actor)
         
         self.db.commit()
         self.db.refresh(db_entry)
@@ -303,9 +306,9 @@ class TimeEntryCRUD:
 
 
 # Convenience functions
-def create_time_entry(db: Session, user_id: UUID, entry_data: TimeEntryCreate) -> TimeEntry:
+def create_time_entry(db: Session, user_id: UUID, entry_data: TimeEntryCreate, *, actor) -> TimeEntry:
     """Create a new time entry."""
-    return TimeEntryCRUD(db).create_time_entry(user_id, entry_data)
+    return TimeEntryCRUD(db).create_time_entry(user_id, entry_data, actor=actor)
 
 
 def get_time_entry(db: Session, entry_id: UUID) -> Optional[TimeEntry]:

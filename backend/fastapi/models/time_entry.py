@@ -95,6 +95,24 @@ class TimeEntry(Base):
         nullable=False,
         doc="Record creation timestamp"
     )
+
+    create_user = Column(
+        String(100),
+        nullable=True,
+        doc="Role-qualified username of the creator (e.g. user:bob)"
+    )
+
+    last_updated_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When the record was last updated"
+    )
+
+    last_updated_user = Column(
+        String(100),
+        nullable=True,
+        doc="Role-qualified username of the last updater"
+    )
     
     # Relationship
     user = relationship("User", back_populates="time_entries")

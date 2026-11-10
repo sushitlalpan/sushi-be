@@ -53,6 +53,9 @@ class TimeEntryRead(TimeEntryBase):
     user_id: UUID = Field(..., description="User who made this entry")
     timestamp: datetime = Field(..., description="When the entry was made")
     created_at: datetime = Field(..., description="Record creation timestamp")
+    create_user: Optional[str] = Field(None, description="Role-qualified username of the creator")
+    last_updated_at: Optional[datetime] = Field(None, description="When the record was last updated")
+    last_updated_user: Optional[str] = Field(None, description="Role-qualified username of the last updater")
     
     class Config:
         """Pydantic configuration."""

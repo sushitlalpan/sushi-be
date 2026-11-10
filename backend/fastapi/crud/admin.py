@@ -15,6 +15,7 @@ from fastapi import HTTPException, status
 from backend.fastapi.models.admin import Admin
 from backend.fastapi.schemas.admin import AdminCreate, AdminUpdate
 from backend.security.password import hash_password
+from backend.fastapi.core.utils import audit_user_label
 
 
 class AdminCRUD:
@@ -24,7 +25,7 @@ class AdminCRUD:
         """Initialize with database session."""
         self.db = db
     
-    def create_admin(self, admin_data: AdminCreate) -> Admin:
+    def create_admin(self, admin_data: AdminCreate, actor=None) -> Admin:
         """
         Create a new admin user.
         
@@ -53,7 +54,8 @@ class AdminCRUD:
             username=admin_data.username,
             password_hash=hashed_password,
             is_active=admin_data.is_active,
-            is_super_admin=admin_data.is_super_admin
+            is_super_admin=admin_data.is_super_admin,
+            create_user=audit_user_label(actor) if actor else "system"
         )
         
         # Save to database
@@ -244,9 +246,9 @@ class AsyncAdminCRUD:
 
 
 # Convenience functions
-def create_admin(db: Session, admin_data: AdminCreate) -> Admin:
+def create_admin(db: Session, admin_data: AdminCreate, actor=None) -> Admin:
     """Create a new admin."""
-    return AdminCRUD(db).create_admin(admin_data)
+    return AdminCRUD(db).create_admin(admin_data, actor)
 
 
 def get_admin_by_username(db: Session, username: str) -> Optional[Admin]:

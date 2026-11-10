@@ -158,7 +158,7 @@ async def register_user(
     - **422**: Validation errors (username/password format)
     """
     try:
-        user = create_user(db, user_create)
+        user = create_user(db, user_create, actor=current_admin)
         # Refresh to load branch relationship
         from sqlalchemy.orm import joinedload
         user_with_branch = db.query(User).options(joinedload(User.branch)).filter(User.id == user.id).first()
@@ -247,7 +247,7 @@ async def list_users(
     branch: Optional[str] = Query(None, description="Filter by branch"),
     include_inactive: bool = Query(False, description="Include inactive users"),
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    user_info: tuple = Depends(get_current_admin_or_user)
 ):
     """
     Get list of all staff users.
@@ -267,6 +267,7 @@ async def list_users(
     - **401**: Not authenticated
     - **403**: Account deactivated
     """
+    current_user, _role = user_info
     # Users cannot see inactive users, only admins can
     if not isinstance(current_user, Admin):
         include_inactive = False
@@ -296,7 +297,7 @@ async def list_users(
 async def get_user_by_id(
     user_id: UUID,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    user_info: tuple = Depends(get_current_admin_or_user)
 ):
     """
     Get specific staff user by ID.

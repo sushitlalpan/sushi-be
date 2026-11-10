@@ -183,6 +183,24 @@ class Expense(Base):
         onupdate=func.now(),
         doc="Timestamp when the expense record was last updated"
     )
+
+    create_user = Column(
+        String(100),
+        nullable=True,
+        doc="Role-qualified username of the creator (e.g. admin:alice)"
+    )
+
+    last_updated_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When the record was last updated by a user"
+    )
+
+    last_updated_user = Column(
+        String(100),
+        nullable=True,
+        doc="Role-qualified username of the last updater"
+    )
     
     # Lock fields
     is_locked = Column(

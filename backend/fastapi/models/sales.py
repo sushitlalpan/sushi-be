@@ -40,7 +40,7 @@ class Sales(Base):
         card_refund: Amount refunded to cards
         card_kiwi: Amount paid by card using Kiwi terminal
         transfer_amt: Amount paid via bank transfer
-        card_total: Calculated total (card_itpv - card_refund + transfer_amt)
+        card_total: Calculated total (card_kiwi + transfer_amt)
         
         Cash payment tracking:
         cash_amt: Amount paid with cash
@@ -151,7 +151,7 @@ class Sales(Base):
         Numeric(precision=12, scale=2),
         nullable=False,
         default=Decimal("0.00"),
-        doc="Calculated total: card_itpv + card_kiwi + transfer_amt - card_refund"
+        doc="Calculated total: card_kiwi + transfer_amt"
     )
     
     # Cash payment fields
@@ -243,6 +243,24 @@ class Sales(Base):
         index=True,
         doc="When the sales record was created"
     )
+
+    create_user = Column(
+        String(100),
+        nullable=True,
+        doc="Role-qualified username of the creator (e.g. admin:alice)"
+    )
+
+    last_updated_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When the record was last updated"
+    )
+
+    last_updated_user = Column(
+        String(100),
+        nullable=True,
+        doc="Role-qualified username of the last updater"
+    )
     
     # Lock fields
     is_locked = Column(
@@ -319,8 +337,8 @@ class Sales(Base):
         Calculate derived fields based on input values.
         This should be called before saving to ensure consistency.
         """
-        # Calculate card total (excludes card_itpv which is tracked separately)
-        self.card_total = self.card_kiwi + self.transfer_amt - self.card_refund
+        # Calculate card total (card_itpv and card_refund are tracked separately)
+        self.card_total = self.card_kiwi + self.transfer_amt
         
         # Calculate cash total
         self.cash_total = self.cash_amt - self.cash_refund

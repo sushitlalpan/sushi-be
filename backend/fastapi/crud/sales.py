@@ -16,10 +16,11 @@ from fastapi import HTTPException, status
 from backend.fastapi.models.sales import Sales
 from backend.fastapi.models.user import User
 from backend.fastapi.models.branch import Branch
+from backend.fastapi.core.utils import stamp_created, stamp_updated
 from backend.fastapi.schemas.sales import SalesCreate, SalesUpdate
 
 
-def create_sales(db: Session, sales_data: SalesCreate) -> Sales:
+def create_sales(db: Session, sales_data: SalesCreate, *, actor) -> Sales:
     """
     Create a new sales record with automatic calculations.
     
@@ -96,6 +97,7 @@ def create_sales(db: Session, sales_data: SalesCreate) -> Sales:
     
     # Calculate derived fields
     db_sales.calculate_totals()
+    stamp_created(db_sales, actor)
     
     db.add(db_sales)
     db.commit()
@@ -251,7 +253,7 @@ def get_sales_count(
     return query.count()
 
 
-def update_sales(db: Session, sales_id: UUID, sales_update: SalesUpdate) -> Optional[Sales]:
+def update_sales(db: Session, sales_id: UUID, sales_update: SalesUpdate, *, actor) -> Optional[Sales]:
     """
     Update an existing sales record.
     
@@ -264,19 +266,12 @@ def update_sales(db: Session, sales_id: UUID, sales_update: SalesUpdate) -> Opti
         Updated sales instance if found, None otherwise
         
     Raises:
-        HTTPException: If worker or branch doesn't exist, duplicate closure number, or record is locked
+        HTTPException: If worker or branch doesn't exist or closure number is duplicated
     """
     # Get existing sales record
     db_sales = get_sales(db, sales_id)
     if not db_sales:
         return None
-    
-    # Check if record is locked
-    if db_sales.is_locked:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This sales record is locked and cannot be modified"
-        )
     
     # Validate worker if being updated
     if sales_update.worker_id:
@@ -334,6 +329,7 @@ def update_sales(db: Session, sales_id: UUID, sales_update: SalesUpdate) -> Opti
     
     # Recalculate derived fields
     db_sales.calculate_totals()
+    stamp_updated(db_sales, actor)
     
     db.commit()
     db.refresh(db_sales)
@@ -447,7 +443,7 @@ def get_sales_pending_review(db: Session, skip: int = 0, limit: int = 100) -> Li
     return get_sales_by_review_state(db, "pending", skip, limit)
 
 
-def update_sales_review_status(db: Session, sales_id: UUID, review_state: str, review_observations: Optional[str] = None) -> Optional[Sales]:
+def update_sales_review_status(db: Session, sales_id: UUID, review_state: str, review_observations: Optional[str] = None, *, actor) -> Optional[Sales]:
     """
     Update the review status of a sales record.
     
@@ -467,6 +463,7 @@ def update_sales_review_status(db: Session, sales_id: UUID, review_state: str, r
     db_sales.review_state = review_state.lower()
     if review_observations is not None:
         db_sales.review_observations = review_observations
+    stamp_updated(db_sales, actor)
     
     db.commit()
     db.refresh(db_sales)
@@ -781,6 +778,11 @@ def get_sales_with_details(db: Session, sales_id: UUID) -> Optional[Dict[str, An
         "revenue_total": sales.revenue_total,
         "notes": sales.notes,
         "created_at": sales.created_at,
+        "create_user": sales.create_user,
+        "last_updated_at": sales.last_updated_at,
+        "last_updated_user": sales.last_updated_user,
+        "is_locked": sales.is_locked,
+        "locked_at": sales.locked_at,
         "worker_username": worker_username,
         "branch_name": branch_name
     }
@@ -845,7 +847,7 @@ def bulk_unlock_sales(db: Session, record_ids: List[UUID]) -> List[UUID]:
     return unlocked_ids
 
 
-def update_sales_branch(db: Session, sales_id: UUID, new_branch_id: UUID, is_super_admin: bool = False) -> Optional[Sales]:
+def update_sales_branch(db: Session, sales_id: UUID, new_branch_id: UUID, is_super_admin: bool = False, *, actor) -> Optional[Sales]:
     """
     Update the branch_id for a sales record.
     
@@ -886,6 +888,7 @@ def update_sales_branch(db: Session, sales_id: UUID, new_branch_id: UUID, is_sup
     
     # Update branch_id
     db_sales.branch_id = new_branch_id
+    stamp_updated(db_sales, actor)
     
     db.commit()
     db.refresh(db_sales)

@@ -55,6 +55,12 @@ class Branch(Base):
         nullable=False,
         doc="Branch creation timestamp"
     )
+
+    create_user = Column(
+        String(100),
+        nullable=True,
+        doc="Role-qualified creator (e.g. 'superadmin:carol') or 'system'"
+    )
     
     updated_at = Column(
         DateTime,

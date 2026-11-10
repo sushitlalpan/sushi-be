@@ -1,10 +1,9 @@
 """
-Data correction script to fix card_total calculations in Sales records.
+Data correction script to update card_total calculations in Sales records.
 
-The card_total formula was incorrectly including card_itpv. This script
-recalculates card_total and discrepancy for all existing sales records.
+This script recalculates card_total and discrepancy for all existing sales records.
 
-Corrected formula: card_total = card_kiwi + transfer_amt - card_refund
+Corrected formula: card_total = card_kiwi + transfer_amt
 
 Run with: python scripts/fix_card_totals_data.py [--dry-run]
 """
@@ -55,7 +54,7 @@ def fix_card_totals(dry_run: bool = False):
         # Query all sales records
         result = connection.execute(text("""
             SELECT id, closure_number, closure_date, worker_id,
-                   card_itpv, card_kiwi, transfer_amt, card_refund,
+                   card_kiwi, transfer_amt,
                    cash_amt, cash_refund, sales_total,
                    card_total, discrepancy, review_state
             FROM sales
@@ -82,8 +81,7 @@ def fix_card_totals(dry_run: bool = False):
             old_card_total = Decimal(str(sale.card_total))
             old_discrepancy = Decimal(str(sale.discrepancy))
             
-            # Correct formula: excludes card_itpv
-            new_card_total = Decimal(str(sale.card_kiwi)) + Decimal(str(sale.transfer_amt)) - Decimal(str(sale.card_refund))
+            new_card_total = Decimal(str(sale.card_kiwi)) + Decimal(str(sale.transfer_amt))
             
             # Recalculate discrepancy
             cash_total = Decimal(str(sale.cash_amt)) - Decimal(str(sale.cash_refund))
@@ -91,8 +89,8 @@ def fix_card_totals(dry_run: bool = False):
             new_discrepancy = payment_total - Decimal(str(sale.sales_total))
             
             # Check if values changed
-            card_total_changed = abs(old_card_total - new_card_total) > Decimal("0.01")
-            discrepancy_changed = abs(old_discrepancy - new_discrepancy) > Decimal("0.01")
+            card_total_changed = old_card_total != new_card_total
+            discrepancy_changed = old_discrepancy != new_discrepancy
             
             if card_total_changed or discrepancy_changed:
                 records_with_changes += 1

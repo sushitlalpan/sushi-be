@@ -41,7 +41,7 @@ router = APIRouter(tags=["payroll-management"])
 async def create_payroll_record(
     payroll_data: PayrollCreate,
     db: Session = Depends(get_sync_db),
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    user_info: tuple = Depends(get_current_admin_or_user)
 ):
     """
     Create a new payroll record (accessible to admins and users).
@@ -66,8 +66,9 @@ async def create_payroll_record(
     - **404**: Worker or branch not found
     - **422**: Validation errors
     """
+    actor, _role = user_info
     try:
-        payroll = create_payroll(db, payroll_data)
+        payroll = create_payroll(db, payroll_data, actor=actor)
         return PayrollRead.model_validate(payroll)
     except HTTPException:
         raise
@@ -477,12 +478,12 @@ async def update_payroll_record(
     payroll_id: UUID,
     payroll_update: PayrollUpdate,
     db: Session = Depends(get_sync_db),
-    current_admin: Admin = RequireActiveAdmin
+    current_admin: Admin = RequireSuperAdmin
 ):
     """
-    Update payroll record (admin-only endpoint).
+    Update payroll record (super-admin-only endpoint).
     
-    **Permissions:** Requires active admin authentication
+    **Permissions:** Requires active super admin authentication
     
     **Parameters:**
     - **payroll_id**: UUID of payroll record to update
@@ -504,7 +505,7 @@ async def update_payroll_record(
     - **422**: Invalid data format
     """
     try:
-        updated_payroll = update_payroll(db, payroll_id, payroll_update)
+        updated_payroll = update_payroll(db, payroll_id, payroll_update, actor=current_admin)
         if not updated_payroll:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -741,7 +742,8 @@ async def update_payroll_review(
             db=db,
             payroll_id=payroll_id,
             review_state=review_update.review_state,
-            review_observations=review_update.review_observations
+            review_observations=review_update.review_observations,
+            actor=current_admin
         )
         
         if not payroll:
@@ -794,6 +796,9 @@ async def get_payroll_pending_review_endpoint(
                 "review_state": payroll.review_state,
                 "review_observations": payroll.review_observations,
                 "created_at": payroll.created_at,
+                "create_user": payroll.create_user,
+                "last_updated_at": payroll.last_updated_at,
+                "last_updated_user": payroll.last_updated_user,
                 "worker_username": payroll.worker.username if payroll.worker else "Unknown",
                 "branch_name": payroll.branch.name if payroll.branch else "Unknown"
             }
@@ -857,6 +862,9 @@ async def get_payroll_by_review_state_endpoint(
                 "review_state": payroll.review_state,
                 "review_observations": payroll.review_observations,
                 "created_at": payroll.created_at,
+                "create_user": payroll.create_user,
+                "last_updated_at": payroll.last_updated_at,
+                "last_updated_user": payroll.last_updated_user,
                 "is_locked": payroll.is_locked,
                 "locked_at": payroll.locked_at,
                 "worker_username": payroll.worker.username if payroll.worker else "Unknown",
@@ -883,8 +891,7 @@ async def get_payroll_by_review_state_endpoint(
 async def bulk_lock_payroll_records(
     *,
     db: Session = Depends(get_sync_db),
-    lock_request: BulkLockRequest,
-    current_admin: Admin = Depends(get_current_admin_or_user)
+    lock_request: BulkLockRequest
 ) -> BulkLockResponse:
     """
     Lock payroll records in bulk based on filters.
@@ -926,8 +933,7 @@ async def bulk_lock_payroll_records(
 async def bulk_unlock_payroll_records(
     *,
     db: Session = Depends(get_sync_db),
-    unlock_request: BulkLockRequest,
-    current_admin: Admin = Depends(get_current_admin_or_user)
+    unlock_request: BulkLockRequest
 ) -> BulkLockResponse:
     """
     Unlock payroll records in bulk by IDs.
@@ -987,7 +993,8 @@ async def update_payroll_branch(
             db=db,
             payroll_id=payroll_id,
             new_branch_id=branch_id,
-            is_super_admin=True
+            is_super_admin=True,
+            actor=current_admin
         )
         
         if not updated_payroll:

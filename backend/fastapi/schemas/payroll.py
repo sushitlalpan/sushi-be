@@ -197,6 +197,21 @@ class PayrollRead(PayrollBase):
         description="When the payroll record was created"
     )
     
+    create_user: Optional[str] = Field(
+        default=None,
+        description="Role-qualified username of the creator"
+    )
+    
+    last_updated_at: Optional[datetime] = Field(
+        default=None,
+        description="When the record was last updated"
+    )
+    
+    last_updated_user: Optional[str] = Field(
+        default=None,
+        description="Role-qualified username of the last updater"
+    )
+    
     is_locked: bool = Field(
         default=False,
         description="Whether this record is locked (read-only)"

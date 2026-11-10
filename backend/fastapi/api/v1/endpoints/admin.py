@@ -175,7 +175,7 @@ async def register(
     - **422**: Validation errors (username/password format)
     """
     try:
-        admin = create_admin(db, admin_create)
+        admin = create_admin(db, admin_create, actor=current_admin)
         return AdminRead.model_validate(admin)
     except HTTPException:
         raise

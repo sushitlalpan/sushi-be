@@ -49,7 +49,7 @@ async def create_expense_record(
     *,
     db: Session = Depends(get_sync_db),
     expense_in: ExpenseCreate,
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    user_info: tuple = Depends(get_current_admin_or_user)
 ) -> ExpenseRead:
     """
     Create a new expense record.
@@ -60,8 +60,9 @@ async def create_expense_record(
     
     Returns the created expense record with calculated fields.
     """
+    actor, _role = user_info
     try:
-        expense_record = expense_crud.create_expense(db=db, expense_data=expense_in)
+        expense_record = expense_crud.create_expense(db=db, expense_data=expense_in, actor=actor)
         return expense_record
     except HTTPException:
         raise
@@ -81,7 +82,7 @@ async def delete_expense_record(
     *,
     db: Session = Depends(get_sync_db),
     expense_id: UUID,
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    user_info: tuple = Depends(get_current_admin_or_user)
 ):
     """
     Delete an expense record.
@@ -90,6 +91,7 @@ async def delete_expense_record(
     - **Users** can only delete their own expense records
     - Returns 404 if expense record doesn't exist
     """
+    current_user, _role = user_info
     # Check if expense exists and user has permission
     expense_record = expense_crud.get_expense(db=db, expense_id=expense_id)
     if not expense_record:
@@ -197,6 +199,9 @@ async def list_expense_records(
             "unit_cost": expense.unit_cost,
             "created_at": expense.created_at,
             "updated_at": expense.updated_at,
+            "create_user": expense.create_user,
+            "last_updated_at": expense.last_updated_at,
+            "last_updated_user": expense.last_updated_user,
             "is_locked": expense.is_locked,
             "locked_at": expense.locked_at,
             "worker_username": expense.worker.username if expense.worker else "",
@@ -349,6 +354,9 @@ async def search_expense_records(
             "unit_cost": expense.unit_cost,
             "created_at": expense.created_at,
             "updated_at": expense.updated_at,
+            "create_user": expense.create_user,
+            "last_updated_at": expense.last_updated_at,
+            "last_updated_user": expense.last_updated_user,
             "is_locked": expense.is_locked,
             "locked_at": expense.locked_at,
             "worker_username": expense.worker.username if expense.worker else "",
@@ -514,7 +522,7 @@ async def get_expense_record(
     *,
     db: Session = Depends(get_sync_db),
     expense_id: UUID,
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    user_info: tuple = Depends(get_current_admin_or_user)
 ) -> ExpenseWithDetails:
     """
     Get a specific expense record with details.
@@ -523,6 +531,7 @@ async def get_expense_record(
     - **Users** can only view their own expense records
     - Returns detailed information including worker and branch names
     """
+    current_user, _role = user_info
     expense_record = expense_crud.get_expense(db=db, expense_id=expense_id)
     if not expense_record:
         raise HTTPException(
@@ -552,26 +561,25 @@ async def get_expense_record(
     "/{expense_id}",
     response_model=ExpenseRead,
     summary="Update Expense Record",
-    description="Update an expense record. Users can update their own expenses, admins can update any."
+    description="Update an expense record. Only super admins can update expense records."
 )
 async def update_expense_record(
     *,
     db: Session = Depends(get_sync_db),
     expense_id: UUID,
     expense_update: ExpenseUpdate,
-    current_user: Admin | User = Depends(get_current_admin_or_user)
+    current_admin: Admin = RequireSuperAdmin
 ) -> ExpenseRead:
     """
     Update an expense record.
     
-    - **Admins** can update any expense record
-    - **Users** can only update their own expense records
+    - **Only super admins** can update expense records
     - Validates worker and branch existence if being updated
     - Automatically recalculates unit cost if amount or quantity changed
     
     Returns the updated expense record.
     """
-    # Check if expense exists and user has permission
+    # Check if expense exists
     expense_record = expense_crud.get_expense(db=db, expense_id=expense_id)
     if not expense_record:
         raise HTTPException(
@@ -579,18 +587,12 @@ async def update_expense_record(
             detail=f"Expense record with ID {expense_id} not found"
         )
     
-    # Check permissions
-    if isinstance(current_user, User) and expense_record.worker_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only update your own expense records"
-        )
-    
     try:
         updated_expense = expense_crud.update_expense(
             db=db,
             expense_id=expense_id,
-            expense_update=expense_update
+            expense_update=expense_update,
+            actor=current_admin
         )
         
         if not updated_expense:
@@ -721,8 +723,13 @@ async def get_reimbursement_report(
                 "branch_id": expense.branch_id,
                 "unit_cost": expense.unit_cost,
                 "created_at": expense.created_at,
-                "updated_at": expense.updated_at,                "is_locked": expense.is_locked,
-                "locked_at": expense.locked_at,                "worker_username": expense.worker.username if expense.worker else "",
+                "updated_at": expense.updated_at,
+                "create_user": expense.create_user,
+                "last_updated_at": expense.last_updated_at,
+                "last_updated_user": expense.last_updated_user,
+                "is_locked": expense.is_locked,
+                "locked_at": expense.locked_at,
+                "worker_username": expense.worker.username if expense.worker else "",
                 "branch_name": expense.branch.name if expense.branch else "",
                 "net_amount": expense.total_amount - (expense.tax_amount or Decimal("0")),
                 "has_receipt": bool(expense.receipt_number and expense.receipt_number.strip()),
@@ -885,7 +892,8 @@ async def update_expense_review(
             db=db,
             expense_id=expense_id,
             review_state=review_update.review_state,
-            review_observations=review_update.review_observations
+            review_observations=review_update.review_observations,
+            actor=current_admin
         )
         
         if not expense:
@@ -947,6 +955,9 @@ async def get_expenses_pending_review(
                 "review_observations": expense.review_observations,
                 "created_at": expense.created_at,
                 "updated_at": expense.updated_at,
+                "create_user": expense.create_user,
+                "last_updated_at": expense.last_updated_at,
+                "last_updated_user": expense.last_updated_user,
                 "is_locked": expense.is_locked,
                 "locked_at": expense.locked_at,
                 "worker_username": expense.worker.username if expense.worker else "Unknown",
@@ -1024,6 +1035,9 @@ async def get_expenses_by_review_state(
                 "review_observations": expense.review_observations,
                 "created_at": expense.created_at,
                 "updated_at": expense.updated_at,
+                "create_user": expense.create_user,
+                "last_updated_at": expense.last_updated_at,
+                "last_updated_user": expense.last_updated_user,
                 "is_locked": expense.is_locked,
                 "locked_at": expense.locked_at,
                 "worker_username": expense.worker.username if expense.worker else "Unknown",
@@ -1157,7 +1171,8 @@ async def update_expense_branch(
             db=db,
             expense_id=expense_id,
             new_branch_id=branch_id,
-            is_super_admin=True
+            is_super_admin=True,
+            actor=current_admin
         )
         
         if not updated_expense:
